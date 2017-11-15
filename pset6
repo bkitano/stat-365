@@ -1,0 +1,217 @@
+---
+title: "Assignment 6"
+author: "Statistics and Data Science 365/565"
+date: "Due: November 16 (before 9:00 am)"
+output:
+  pdf_document: 
+     highlight: haddock
+  html_document: default
+params:
+  ShowCode: no
+  ShowOut: no
+---
+\usepackage{amsmath}
+\usepackage{amssymb}
+\newcommand{\trans}{{\scriptstyle T}}
+\newcommand{\reals}{\mathbb R}
+\newcommand{\argmin}{\mathop{\rm arg\,min}}
+\let\hat\widehat
+
+
+# 1. Probabilities for topic modeling (10 points)
+
+Consider a latent Dirichlet allocation topic model with $K=2$ topics. Given the topics $\beta_k$, compute in closed form the likelihood of the 3-word document $d=$``\texttt{seize the data}" assuming each word is in the vocabulary. That is, compute the probability
+$$
+\mathbb{P}(W_{d,1} = \texttt{seize}, W_{d,2} = \texttt{the}, W_{d,3} = \texttt{data}|\beta_{1:2},\alpha).
+$$
+Hint: Your solution should be a sum of 8 terms.
+
+\noindent
+In the following problems, you will model the statistics and machine learning repository of the online question and answer site \texttt{StackExchange}, called \texttt{CrossValidated}. Screen shots from a couple of the posts are shown in the PDF file.
+
+
+# 2. Topic modeling of CrossValidated (50 points)
+
+Our data were taken from the December 15, 2016 Stack Exchange data dump\footnote{Licensed under Creative Commons Share Alike 3.0, https://creativecommons.org/licenses/by-sa/3.0/}. You will find two files
+\begin{align*}
+&\texttt{stackexchange/20161215StatsPostsRaw.csv} \\
+&\texttt{stackexchange/20161215StatsPostsMerged.csv}
+\end{align*}
+The cleaned file has 92,335 documents, created by combining questions and associated answers, then removing HTML, \LaTeX, code, and stopwords. See the \texttt{README} file for further details. 
+
+\noindent
+Here is part of an entry from the cleaned up version of the collection:
+\begin{align*}
+&\texttt{124,``Statistical classification of text I'm a programmer without} \\
+&\texttt{statistical background, and I'm currently looking at different} \\
+&\texttt{classification methods for a large number of different documents that} \\
+&\texttt{I want to classify into pre-defined categories. I've been reading} \\
+&\texttt{about kNN, SVM and NN. However, I have some trouble getting} \\
+&\texttt{started. What resources do you recommend? I do know single variable} \\
+&\texttt{and multi variable calculus quite well, so my math should be strong} \\
+&\texttt{enough. I also own Bishop??s book on Neural Networks, but it has proven} \\
+&\texttt{to be a bit dense as an introduction. [...]}
+\end{align*}
+
+## Part a
+
+Process the data to determine a word vocabulary. You should get a vocabulary of size around 10,000 words or so??-it's up to you to decide. Describe the steps you take to process the data and the criteria you use to select the vocabulary.
+
+Load the data
+```{r}
+library(text2vec)
+library(tm)
+set.seed(5);
+data <- read.csv(file = './stackexchange/20161215StatsPostsMerged.csv/data', header = TRUE, sep=",")
+
+```
+
+Clean the data, make a thing
+```{r}
+
+data$CleanBody <- stringr::str_replace_all(data$CleanBody,"[^[:alpha:]]", " ")
+data$CleanBody <- stringr::str_replace_all(data$CleanBody,"\\s+", " ")
+stopwords <- c(tm::stopwords("english"))
+
+prep_fun <- tolower
+tok_fun <- word_tokenizer
+tok_fun <- word_tokenizer    
+tokens <- data$CleanBody%>% 
+         prep_fun %>% 
+         tok_fun
+it <- itoken(tokens, 
+            ids = data$CleanBody,
+            progressbar = FALSE)
+
+v <- create_vocabulary(it, stopwords = stopwords) %>% 
+    prune_vocabulary(term_count_min = 10)
+
+vectorizer <- vocab_vectorizer(v)
+```
+
+Make the document term matrix:
+```{r}
+dtm <- create_dtm(it, vectorizer)
+```
+## Part b
+
+Now fit topic models on the collection. Divide the corpus into training and validation documents?Cuse a 90\%/10\% split, holding out about 9,000 documents. You will need to write a parser that maps each entry to a sequence of word-id/count pairs. You may use the LDA implementation in the library \texttt{topicmodels} or any other R library that you wish. The following resources may be helpful:
+\begin{align*}
+&\texttt{https://goo.gl/6xLoky} \\
+&\texttt{http://tidytextmining.com/topicmodeling.html}
+\end{align*}
+
+Partitioning the dataset:
+```{r}
+data_size <- length(data[,1])
+
+train_index <- sample(data_size, .9*data_size)
+
+corpus.train <- dtm[train_index, ]
+corpus.val <- dtm[-train_index, ]
+```
+
+Train topic models using different numbers of topics; a good starting point would be around 30 topics. Display the top 10 or so words (in decreasing order of probability $\beta_{kw}$) in each topic. Comment on the ``meaning" or interpretation of several of the topics.
+
+```{r}
+
+lda_model <- LDA$new(n_topics = 30, doc_topic_prior = 0.1, topic_word_prior = 0.01)
+doc_topic_distr <- 
+  lda_model$fit_transform(x = corpus.train, n_iter = 500, 
+                          convergence_tol = 0.001, n_check_convergence = 25, 
+                          progressbar = FALSE)
+```
+
+View some topics:
+```{r}
+top_words <- lda_model$get_top_words(n = 10, topic_number = c(1:30), lambda = 0.2)
+top_words
+```
+In general, some of the topics include biology, confidence/uncertainty, error measures, formulas, r stuff, games, forecasts and time words, PCA and linear algebra, people and people metrics, adjectives used for math, clustering, neural networks, the philosophy of statistics. They aren't all very descriptive, and don't capture the connotations that we would normally associate with topics; they're more like word associations.
+
+\noindent
+Select several documents, and display the most probable topics for each of them (according to the posterior distribution over $\theta$). Do the assigned topics make sense? Comment on your findings.
+
+\noindent
+You will need to read the documentation for the implementation that you choose (mllib or ml), to learn how to carry out these steps.
+
+```{r}
+plot_doc <- function(index) {
+  barplot(doc_topic_distr[index, ], xlab = "topic", 
+        ylab = "proportion", main=index, ylim = c(0, 1), 
+        names.arg = top_words[1,], las=2)
+
+  row.names(doc_topic_distr)[index]
+}
+
+plot_doc(1)
+```
+
+```{r}
+plot_doc(2)
+```
+
+```{r}
+plot_doc(3)
+```
+
+The assigned topics do make sense! I think one interesting component is the sparsity of topics for the very specific questions, like in the last plot.
+
+```{r}
+lda_model$plot()
+```
+
+## Part c
+
+Now you will investigate how to evaluate the model more quantitatively\footnote{This is a ``concepts" problem. Write up your solution in your R markdown document.} Recall that
+(for a model that is exchangeable at the document level), the perplexity of a model $\theta$ is
+$$
+\text{Perplexity}(\theta) = \left(\prod_D p_\theta(D)\right)^{-1/\sum_D|D|},
+$$
+where $D$ is a test document with $|D|$ words. Explain how this corresponds to the definition
+$$
+\text{Perplexity}(\theta) = \left(\prod_{i=1}^N p_\theta(w_n|w_1,...,w_{n-1})\right)^{-1/N},
+$$
+which is the inverse geometric mean of the predictions.
+
+These two definitions are very similar. The most immediate similarity is the exponent $\frac{-1}{sum_D |D|}$ or $\frac{-1}{N}$, where $|D|$ is the number of words per document, and $N$ is the number of words. Since we are summing over all of the documents, $\sum_D |D| = N$.
+
+\noindent
+Now, explain (mathematically) how to evaluate the test set perplexity for the latent Dirichlet allocation model. Why is this difficult? Can you propose a computationally efficient approximation?
+
+## Part d
+
+Now evaluate the test set perplexity for a range of models, fit with $K = 10,20,...,200$ topics (or an appropriate range of your own choice). Plot the test set perplexity as a function of number of topics. Which is the best model? Do you notice any qualitative difference in the topics as $K$ increases? Comment on your overall findings.
+
+```{r}
+
+new_doc_topic_dstr <- lda_model$transform(corpus.val)
+
+perplexity(corpus.val, topic_word_distribution = lda_model$topic_word_distribution, doc_topic_distribution = new_doc_topic_dstr)
+
+```
+
+```{r}
+
+perplexities <- vector()
+
+for( i in 1:20) {
+  lda_model <- LDA$new(n_topics = 10*i, doc_topic_prior = 0.1, topic_word_prior = 0.01)
+  doc_topic_distr <- 
+    lda_model$fit_transform(x = corpus.train, n_iter = 500, 
+                            convergence_tol = 0.001, n_check_convergence = 25, 
+                            progressbar = FALSE)
+  
+  new_doc_topic_dstr <- lda_model$transform(corpus.val)
+
+  perplexities[i] <- perplexity(corpus.val, topic_word_distribution = lda_model$topic_word_distribution, doc_topic_distribution = new_doc_topic_dstr)
+
+}
+
+```
+
+plot
+```{r}
+library(ggplot2)
+ggplot(perplexities, aes(x,y)) + geom_point() + geom_smooth()
+```
