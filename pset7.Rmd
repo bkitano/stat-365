@@ -1,0 +1,556 @@
+---
+title: "Assignment 7"
+author: "Statistics and Data Science 365/565"
+date: "Due: December 7 (before 9:00 am)"
+output:
+  pdf_document: 
+     highlight: haddock
+  html_document: default
+params:
+  ShowCode: no
+  ShowOut: no
+---
+
+\newcommand{\trans}{{\scriptstyle T}}
+\newcommand{\reals}{\mathbb R}
+\newcommand{\argmin}{\mathop{\rm arg\,min}}
+\let\hat\widehat
+
+This assignment involves three problems related to word
+embeddings. The first problem explores the equivalence of
+\texttt{word2vec} with factorization of a certain matrix. The second
+problem asks you to experiment with word embeddings for Wikipedia
+data. The third problem involves constructing embeddings of music
+artists from radio station song playlists.
+
+
+# Problem 1: Demystifying word2vec (10 points)
+
+Show that embeddings obtained in this way are equivalent to those obtained by
+factorizing a specific matrix, through the following steps:
+
+\begin{enumerate}
+\item Define $x = v_w^Tv_c$. Show that a stationary point $\partial \ell /
+  \partial x = 0$ of the objective satisfies 
+\begin{equation*}
+x = \log\left( \frac{\#(w,c)\cdot |D|}{\#(w)\cdot \#(c)} \right) - \log k.
+\end{equation*}
+\item Explain how this motivates constructing embeddings
+  $v_w\in\reals^d$ as the rank-$d$ SVD of a $|V|\times |V|$ matrix
+  $M$. What is this matrix?
+\end{enumerate}
+
+# Problem 2: Word Embedding Experiments (40 points)
+
+The code below will read the \texttt{text8} file and construct a vocabulary. 
+```{r}
+install.packages('text2vec')
+library(text2vec)
+library(Matrix)
+text8_file <- "text8"
+wiki       <- readLines(text8_file, n = 1, warn = FALSE)
+tokens     <- space_tokenizer(wiki)
+it         <- itoken(tokens, progressbar = FALSE)
+vocab      <- create_vocabulary(it)
+vocab      <- prune_vocabulary(vocab, term_count_min = 100L)
+vectorizer <- vocab_vectorizer(vocab)             
+```
+
+## PMI embeddings
+
+The following code will compute the cooccurence matrix with a symmetric context window size of $5$. The $(i,j)$-th entry of the matrix \texttt{co}  will equal $(w_i,w_j)$.
+
+```{r}
+tcm          <- create_tcm(it, vectorizer, skip_grams_window = 5L,
+                           skip_grams_window_context="symmetric",
+                           weights=1/rep(1, 5L))
+co           <- tcm + t(tcm)
+dimnames(co) <- dimnames(tcm)              
+```
+
+## GloVe embeddings
+
+GloVe is another popular word embedding method. The following code
+will run stochastic gradient descent to obtain GloVe word embeddings
+stored in the \texttt{g.embed} variable.
+
+```{r}
+set.seed(1987)
+glove      <- GlobalVectors$new(word_vectors_size = 50,
+                                vocabulary = vocab, x_max = 10)
+g.embed    <- fit_transform(tcm, glove, n_iter = 20)
+```
+The rows of \texttt{g.embed} are the word embeddings. 
+
+## Pre-trained GloVe Embeddings
+
+Finally, we will work with pre-trained GloVe
+embeddings. These embeddings were trained on a large corpus containing
+6 billion tokens. 
+
+```{r}
+load("./pre-trained-glove.RData")
+```
+
+## Experiments
+
+Conduct the following experiments with all three sets of embeddings:
+the PMI embeddings, the local GloVe embeddings, and the pre-trained
+GloVe embeddings. Based on the available memory on your computer, you
+may need to perform the experiments for each set of embeddings in a
+fresh R session. Comment on the qualitative differences in
+the results for each of the three embeddings.
+
+
+\vskip10pt
+(a) For each of the following words, find the 5 closest words in the
+embedding space, and report your results:
+\begin{small}
+\begin{center}
+\texttt{yale, physics, republican, einstein, algebra, fish} 
+\end{center}
+\end{small}
+Here, ``closest" means closest in Euclidean distance. You might want
+to use the \texttt{sim2()} function from \texttt{text2vec}.
+Choose five other query words yourself, and for each of them show
+the closest words in the embedding space. Comment on your findings.
+
+My code is based off the tutorial from http://text2vec.org/glove.html.
+
+### Locally trained GloVe embeddings
+```{r}
+# get the word vectors
+wv_context <- glove$components
+local_emb <- g.embed + t(wv_context)
+```
+
+```{r}
+# get the word vectors
+word_vectors <- local_emb
+yale <- word_vectors['yale', , drop = FALSE]
+physics <- word_vectors["physics", , drop = FALSE]
+republican <- word_vectors["republican" , , drop = FALSE]
+einstein <- word_vectors["einstein", , drop = FALSE]
+algebra <- word_vectors["algebra", , drop = FALSE]
+fish <- word_vectors["fish", , drop = FALSE]
+
+# find the closest vector
+cos_sim = sim2(x = word_vectors, y = yale, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = physics, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = republican, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = einstein, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = algebra, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = fish, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+```
+The most similar words for each are: 
+
+{yale: princeton, haven, inaugural, mcgill, university}, 
+{physics: chemistry, mechanics, quantum, theoretical, mathematics}, 
+{republican: presidential, democratic, election, democrat, candidate}, 
+{einstein: relativity, mechanics, bose, quantum, gravitation}, 
+{algebra: finite, algebraic, dimensional, lie, mathematics}, and 
+{fish: birds, meat, food, animals, eating}. 
+
+These pairings are quite interesting, as they seem very heuristically relevant but not denotationally similar; for example, "Yale" and "Princeton" are similar concepts, but they themselves aren't synonyms for each other. Similarly with "fish" and "birds", "physics" and "chemistry", these words are very muched used in the same grammatical contexts, but do not have the same meaning. The closest vectors also incorporate related words that are of different grammatical construct, so a noun like "yale" is also associated with the adjective "inaugural". 
+
+For my choice of words, I will investigate the use of adjectives and adverbs, thus potentially avoiding the issue of noun replacement. My hypothesis is that if the verbal embeddings are picking up meaning, the similar vectors to words like "careful" and "quickly" will be "cautious" and "rapidly", respectively. Otherwise, if the embeddings only pick up grammatical context, the vectors could perhaps be similarly used words, rather than semantically similar words. I also want to choose some words that I think will not be very similar to any other words, such as "love" and "phone", for which there are few actual synonyms. Here, my hypothesis will be that since the embeddings should lack in similar vectors, it will merely return words that are commonly associated.
+
+```{r}
+# get the word vectors
+careful <- word_vectors['careful', , drop = FALSE]
+quickly <- word_vectors["quickly", , drop = FALSE]
+easy <- word_vectors["easy" , , drop = FALSE]
+love <- word_vectors["love", , drop = FALSE]
+phone <- word_vectors["phone", , drop = FALSE]
+
+# find the closest vector
+cos_sim = sim2(x = word_vectors, y = careful, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = quickly, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = easy, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = love, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = phone, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+```
+The most similar words are:
+{careful: reasoning, carefully, overcome, consideration, progressively}
+{quickly: soon, eventually, move, could, enable}
+{love: my, man, me, god, her}
+{phone: phones, mobile, telephone, cellular, wireless}
+
+These results are very interesting! Note that for the adjectives and adverbs, many of the similar vectors are semantically similar, which leads me to believe that the embeddings are able to account not only for similar contextual usage, in the way that "fast" and "slow" are related, but also denotation, in the way that "careful" and "carefully" are related, which in fact the embeddings derive exactly. Second, notice the similar vectors for "love": these words are barely related at all! Yet, notice the norm values: they are even closer than "careful" and "carefully." This calls into question the following: what does "love" really mean? Is our training corpus large enough? Are these norm values actually meaningful? We should try these same words on the pretrained embeddings.
+
+### Pre-trained embeddings
+
+```{r}
+# reset the thing so we can use the same code
+word_vectors <- pt.glove
+
+# get the word vectors
+yale <- word_vectors['yale', , drop = FALSE]
+physics <- word_vectors["physics", , drop = FALSE]
+republican <- word_vectors["republican" , , drop = FALSE]
+einstein <- word_vectors["einstein", , drop = FALSE]
+algebra <- word_vectors["algebra", , drop = FALSE]
+fish <- word_vectors["fish", , drop = FALSE]
+
+# find the closest vector
+cos_sim = sim2(x = word_vectors, y = yale, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = physics, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = republican, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = einstein, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = algebra, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = fish, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+```
+Wow, there's a massive difference in quality here. The similar words are 
+
+{yale: harvard, princeton, cornell, graduate, university}
+{physics: chemistry, mathematics, theoretical, science, biology}
+{republican: democrat, democratic, republicans, democrats, senator}
+{einstein: relativity, bohr, physics, freud, theory}
+{algebra: geometry, algebraic, algebras, associative, boolean}
+{fish: salmon, meat, birds, bird, wild}
+
+Let's compare performance. For "yale", it seems like our results improved significantly, as we have seen more contexts for its usage. This intuitively makes sense: "yale" is a word that lacks a concise definition, and so on a corpus that is too small the words it will relate to will be relatively noisy. Yet, as we increase the observed contexts, we get a better understanding for the proper noun. On the complete flipside however, it seems as though our similar words for "einstein" got worse! Instead of focusing on physics terms, this group focuses instead on science as a whole, including "freud," who was a psychologist. Overall, it seems like the connotations of the words change when we use a larger context, and that on the whole, they grow more accurate. 
+
+```{r}
+# get the word vectors
+careful <- word_vectors['careful', , drop = FALSE]
+quickly <- word_vectors["quickly", , drop = FALSE]
+easy <- word_vectors["easy" , , drop = FALSE]
+love <- word_vectors["love", , drop = FALSE]
+phone <- word_vectors["phone", , drop = FALSE]
+
+# find the closest vector
+cos_sim = sim2(x = word_vectors, y = careful, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = quickly, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = easy, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = love, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = phone, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+```
+
+For my own word choices, we yield:
+
+{careful: appropriate, merely, helpful, thorough, explaining}
+{quickly: soon, again, eventually, turn, finally}
+{easy: easier, quick, way, make, hard}
+{love: dream, life, dreams, loves, me}
+{phone: telephone, phones, internet, mail, customers}
+
+Again, note how the embeddings pick up the meanings of the adjectives quite well, and the similar words for "love" and "phone" remain overall tautological. I interpret this to mean that these words really don't have strong analogs in our common parlance.
+
+### PMI Embeddings
+```{r}
+# first, we want to calculate M
+m <- rowSums(co)
+M <- log((co+1)/(m%*%t(m)))
+```
+
+```{r}
+# then we need to calculate D
+D <- nnzero(co[which(upper.tri(co))])
+```
+
+```{r}
+# by log rules, the given formula can be rewritten as log D + M, so
+M <- M + log(D)
+```
+
+```{r}
+# we now factorize M down to the first 50 singular values.
+library(irlba)
+svd <- irlba(M, 50)
+```
+
+
+```{r}
+# to create the embeddings from PMI, we need U and Sigma^.5, which are extracted using the following:
+U <- svd$u
+Sig <- diag(sqrt(svd$d))
+W <- U %*% Sig
+rownames(W) <- rownames(co)
+```
+
+We can now perform the very same analyses:
+
+```{r}
+# reset the thing so we can use the same code
+word_vectors <- W
+
+# get the word vectors
+yale <- word_vectors['yale', , drop = FALSE]
+physics <- word_vectors["physics", , drop = FALSE]
+republican <- word_vectors["republican" , , drop = FALSE]
+einstein <- word_vectors["einstein", , drop = FALSE]
+algebra <- word_vectors["algebra", , drop = FALSE]
+fish <- word_vectors["fish", , drop = FALSE]
+
+# find the closest vector
+cos_sim = sim2(x = word_vectors, y = yale, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = physics, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = republican, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = einstein, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = algebra, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = fish, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+```
+Alright, these vectors are very interesting, and somewhat different than the GloVe embeddings:
+
+{yale: princeton, cornell, stanford, graduated, dartmouth}
+{physics: mechanics, quantum, chemistry, theoretical, mathematical}
+{republican: presidential, democrats, coalition, candidate, clinton}
+{einstein: newton, relativity, experiment, mechanics, quantum}
+{algebra: theorem, algebraic, finite, calculus, linear}
+{fish: fruit, plants, plant, trees, meat}
+
+I think the outlier in all of these embeddings is "yale," and I believe this because the nuances of the term are very wide, compared to all the others, which keep very similar similarity groups. Note that "yale" is a place, a univeristy, and an historic institution, which are all reflected in the various groups. Note also that "yale" is likely less used than all the other words, and so whatever embeddings will likely be overfitting the contexts they are derived from, leading such a high variance between the groupings. 
+
+For my own words:
+```{r}
+# get the word vectors
+careful <- word_vectors['careful', , drop = FALSE]
+quickly <- word_vectors["quickly", , drop = FALSE]
+easy <- word_vectors["easy" , , drop = FALSE]
+love <- word_vectors["love", , drop = FALSE]
+phone <- word_vectors["phone", , drop = FALSE]
+
+# find the closest vector
+cos_sim = sim2(x = word_vectors, y = careful, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = quickly, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = easy, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = love, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+
+cos_sim = sim2(x = word_vectors, y = phone, method = "cosine", norm = "l2")
+head(sort(cos_sim[,1], decreasing = TRUE), 6)
+```
+
+Again, no computer can truly know the meaning of "love". However, they seem to come up with relatively relevant words for all the other vectors. In general, I would say that the pretrained GloVe embeddings are the best, because their words feel more relevant.
+
+\vskip10pt
+(b)  A surprising consequence of some word embedding methods is that
+  they can be used to resolve analogies, like
+\begin{center}
+\begin{small}
+\texttt{france : paris :: england : ?}
+\end{small}
+\end{center}
+You can ``solve" this analogy by computing the nearest embedding vector to $v$ where,
+\begin{equation*}
+v = v_{\texttt{paris}}  - v_{\texttt{france}} + v_{\texttt{england}}
+\end{equation*}
+Exclude the vectors $ v_{\texttt{paris}}$, $v_{\texttt{france}}$, $v_{\texttt{england}}$  from the nearest neighbor search. Solve the following analogies with all sets of word embeddings and report your results:
+\begin{center}
+\begin{small}
+\texttt{france : paris :: england : ?} \\
+\texttt{france : paris :: germany : ?} \\
+\texttt{queen : woman :: king : ?}
+\end{small}
+\end{center}
+Choose five other analogies yourself, and report on the results.
+
+```{r}
+# a function to generalize the process
+
+analogy <- function(emb, w1, w2, w3) {
+  drop <- rownames(emb) %in% c(w1, w2, w3)
+  
+  # next, calculate what the addition and subtractions are
+  sol = emb[w1, , drop = FALSE] - 
+    emb[w2, , drop = FALSE] + 
+    emb[w3, , drop = FALSE]
+  
+  # finally, find it in the embeddings 
+  cos_sim = sim2(x = emb[!drop,], y = sol, method = "cosine", norm = "l2")
+  head(sort(cos_sim[,1], decreasing = TRUE), 5)
+}
+
+# a function that gets the related words
+relwords <- function(emb, w) {
+  wv <- word_vectors[w , , drop = FALSE]
+  cos_sim = sim2(x = emb, y = wv, method = "cosine", norm = "l2")
+  head(sort(cos_sim[,1], decreasing = TRUE), 6)
+}
+```
+
+### Local embeddings
+
+```{r}
+analogy(local_emb, "france", "paris", "england") # kingdom
+analogy(local_emb, "france", "paris", "germany") # italy
+analogy(local_emb, "queen", "woman", "king") # scotland
+
+analogy(local_emb, "metres", "feet", "pounds") # kg
+analogy(local_emb, "inches", "meter", "miles") # kilometers
+analogy(local_emb, "purple", "red", "yellow") # pale
+analogy(local_emb, "orange", "yellow", "blue") # white
+analogy(local_emb, "yale", "harvard", "dartmouth") # kermit
+
+```
+
+### pre trained embeddings
+```{r}
+analogy(pt.glove, "france", "paris", "england") # ireland
+analogy(pt.glove, "france", "paris", "germany") # denmark
+analogy(pt.glove, "queen", "woman", "king") # coronation
+
+analogy(pt.glove, "metres", "feet", "pounds") # kg
+analogy(pt.glove, "inches", "meter", "miles") # kilometers
+analogy(pt.glove, "purple", "red", "yellow") # pink
+analogy(pt.glove, "orange", "yellow", "blue") # black
+analogy(pt.glove, "yale", "harvard", "dartmouth") # ithaca
+```
+
+### PMI embeddings
+```{r}
+analogy(W, "france", "paris", "england") # kingdom
+analogy(W, "france", "paris", "germany") # russia
+analogy(W, "queen", "woman", "king") # prince
+
+analogy(W, "metres", "feet", "pounds") # ppp
+analogy(W, "inches", "meter", "miles") # km
+analogy(W, "purple", "red", "yellow") # prescription
+analogy(W, "orange", "yellow", "blue") # red
+analogy(W, "yale", "harvard", "dartmouth") # gemini
+```
+
+Overall, the embeddings are very good at unit conversions, but lack any notion of a color wheel, or college rivalries. They are able to get the gist of an analogy, but their ability to get the correct one is limited. However, a unique application would perhaps be for recipes, replacing carnivorous ingredients with vegan ones, as shown here:
+
+```{r}
+analogy(pt.glove, "chicken", "beans", "beef")
+```
+Ah, perhaps not actually. Indeed, the corpus is probably still too small or specific to understand complex dietary restrictions. One question to consider: how large does a corpus need to be, and what is the marginal rate of return on expanding the observations? Perhaps we are reaching the limit of the algorithm's potential.
+
+\vskip20pt
+(c)  Use the t-SNE dimensionality reduction technique to visualize only the \textit{pre-trained GloVe embeddings} in two dimensions. The code below will perform the t-SNE method and store the two dimensional points in the variable \texttt{t.sne}.
+
+```{r,eval=FALSE}
+library(Rtsne)
+set.seed(1987)
+tt              <- Rtsne(pt.glove)
+t.sne           <- tt$Y
+rownames(t.sne) <- rownames(pt.glove)
+```
+
+For example, you can call it like this: 
+\begin{footnotesize}
+\begin{center}
+\texttt{plot.pts(t.sne, "democrat", "politics")}
+\end{center}
+\end{footnotesize}
+
+Find at least two more examples that produce expected results and two examples
+that produce surprising results. Include the plots in your
+write-up. Give reasons why you might see surprising behavior
+here. Note: To avoid the two points shown with \texttt{plot.pts} falling on
+top of each other, you might want to consider using the R
+\texttt{jitter} function to perturb them a little bit.
+
+
+# Problem 3: Experiments with Musician Embeddings (15 points)
+
+In this problem, we will use a collection of playlists obtained from \href{http://www.last.fm}{last.fm}. We treat each playlist as a document, and each artist in the playlist as a word. By feeding this dataset to GloVe, we will be able to learn artist embeddings. 
+
+## Artist Embeddings
+
+The following experiments will be done with the playlist data file
+\texttt{playlists.txt} on Canvas. 
+Each line in this file is a playlist. The integers on each line are
+unique artist identifiers, indicating which artists were in each
+playlist.   The artists are in \texttt{playlists.txt}.
+
+Run the code below to construct artist embeddings with GloVe. Be sure to change the second line to point to your local copy of the playlist data. 
+
+```{r,eval=FALSE}
+library(text2vec)
+playlists  <- readLines("/your/path/to/playlists.txt", warn = FALSE)
+tokens     <- space_tokenizer(playlists)
+it         <- itoken(tokens, progressbar = FALSE)
+vocab      <- create_vocabulary(it)
+vocab      <- prune_vocabulary(vocab, term_count_min = 50L)
+vectorizer <- vocab_vectorizer(vocab)
+tcm        <- create_tcm(it, vectorizer, skip_grams_window = 750L,
+                         skip_grams_window_context="symmetric",
+                         weights=1/rep(1, 750L))
+glove      <- GlobalVectors$new(word_vectors_size = 100,
+                                vocabulary = vocab, x_max = 10)
+a.embed    <- fit_transform(tcm, glove, n_iter = 50)
+```
+
+The rownames of \texttt{a.embed} are currently the artist IDs. This
+file contains the artists in order of artist ID. (Note that artist IDs
+start from zero.) Run the following code to change the rownames of \texttt{a.embed} to the artist names:
+
+```{r,eval=FALSE}
+artist.hash       <- readLines("/path/to/artists.txt", warn=FALSE)
+rownames(a.embed) <- artist.hash[as.numeric(rownames(a.embed))+1]
+```
+
+(a) Find the 5 closest artist embedding vectors to the 
+  artists \texttt{`The Beatles'}, \texttt{`Lady Gaga'}, and \texttt{`Nirvana'}. Comment on the results.
+
+(b) Similar to the word embeddings question, use the t-SNE
+  dimensionality reduction technique to visualize the artist
+  embeddings. After running t-SNE on the artist embeddings, try the
+  following example: \texttt{plot.pts(t.sne, "The Temptations", "The
+    Supremes")}. Find a few more examples that you think are interesting
+  and include the plots in your write-up. 
+  Comment on your findings.
+
+
+
+
