@@ -1,0 +1,424 @@
+---
+title: "Assignment 5"
+author: "Statistics and Data Science 365/565"
+date: "Due: November 2 (before 9:00 am)"
+output:
+  pdf_document: 
+     highlight: haddock
+  html_document: default
+params:
+  ShowCode: no
+  ShowOut: no
+---
+
+\newcommand{\trans}{{\scriptstyle T}}
+\newcommand{\reals}{\mathbb R}
+\newcommand{\argmin}{\mathop{\rm arg\,min}}
+\let\hat\widehat
+
+This homework treats the Adaboost algorithm (problem 1), and random forests and gradient boosting (problem 2).
+
+# Problem 1 (10 points)
+
+Suppose we have a dataset $\{(x_i, y_i)\}_{i = 1}^n$ where $y_i \in \{ \pm 1 \}$ for each $i \in [n]$. Recall that at each iteration $t \in \{ 0, ..., T\}$, the Adaboost algorithm computes a classifier $f_t(x_i) \in \{ \pm 1 \}$ by minimizing the weighted error. The algorithm then updates the weight for each point $i$ in the following way:
+$$
+w_{t+1}(i) = \frac{w_t(i) e^{-\alpha_t y_i f_t(x_i)}}{Z_t}
+$$
+where $Z_t = \sum_{i \le n} w_t(i) e^{-\alpha_t y_i f_t(x_i)}$. 
+
+## Part a.
+Let $\epsilon_t = \sum_{i : f_t(x_i) \ne y_i} w_t(i)$. That is, $\epsilon_t$ is the sum of the weights at the points we got wrong at step $t$ of the algorithm. Show that 
+$$
+Z_t = e^{\alpha_t} \epsilon_t + e^{-\alpha_t} (1 - \epsilon_t)
+$$
+### Answer
+Let's consider the case where $f_t(x_i) = y_i$. Since this is a binary classifier with values $y_i \in \{\pm 1\}$,
+if they are the same, then $y_if_t(x_i) = 1$. Similarly, if they are different, then $y_if_t(x_i) = -1$. Breaking this up into a correctly classified set and misclassified set within the sum yields 
+$$
+\sum w_t(i) e^{-\alpha_t y_i f_t(x_i)} = \sum_{\text{incorrect}} w_t(i)e^{\alpha_t} + \sum_{\text{correct}} w_t(i) e^{-\alpha_t} 
+$$
+Since $e^{\pm \alpha_t}$ is a constant, we'll pull it out from the sum, yielding
+$$
+Z_t = e^{\alpha_t}\sum_{\text{incorrect}} w_t(i) + e^{-\alpha_t} \sum_{\text{correct}} w_t(i)  
+$$
+What are the two sums remaining? The sum on the left, $\sum_{\text{incorrect}} w_t(i)$, is our given term, $\epsilon_t$. Since the sum on the right sums over the complement of the sum on the left, the sum on the right must therefore be $1 - \epsilon_t$, because the adaboost algroithm forces the weights to sum to one. Thus
+$$
+Z_t = e^{\alpha_t} \epsilon_t + e^{-\alpha_t} (1-\epsilon_t) 
+$$
+
+## Part b.
+Now show that the formula for the optimal $\alpha_t$ from class is given by the $\hat \alpha_t$ that minimizes $Z_t$:
+$$
+\hat \alpha_t = \frac{1}{2} \log \Biggl( \frac{1 - \epsilon_t}{\epsilon_t} \Biggr)
+$$
+
+### Answer
+Start by differentiating both sides with respect to $\alpha$.
+
+$$
+\frac{\partial Z_t}{\partial \alpha_t} = \frac{\partial}{\partial \alpha_t} \left( e^{\alpha_t} \epsilon_t +  e^{-\alpha_t} (1-\epsilon_t) \right) 
+$$
+Carrying out the differentiation yields
+$$
+\frac{\partial Z_t}{\partial \alpha_t} = e^{\alpha_t} \epsilon_t - e^{-\alpha_t} (1-\epsilon_t) 
+$$
+We want the term on the left to be 0, so
+$$
+0 = e^{\hat \alpha_t} \epsilon_t - e^{-\hat \alpha_t} (1-\epsilon_t) 
+$$
+or, after some redistribution
+$$
+ e^{-\hat \alpha_t} (1-\epsilon_t)  = e^{\hat \alpha_t} \epsilon_t 
+$$
+Taking the log of both sides yields
+$$
+\log(1-\epsilon_t) - \hat \alpha_t = \log(\epsilon_t) + \hat \alpha_t
+$$
+Redistributing yields
+$$
+2 \hat \alpha_t = \log(1-\epsilon_t) - \log(\epsilon_t) = \log\left(\frac{1 - \epsilon_t}{\epsilon_t}\right)
+$$
+Thus
+$$
+\hat \alpha_t = \frac{1}{2} \log \Biggl( \frac{1 - \epsilon_t}{\epsilon_t} \Biggr)
+$$
+# Problem 2 (50 points)
+
+In this problem, you will train random forests to forecast the sale price of real estate listings. Random forests are nonparametric methods for classification and regression. As discussed in class, the method is based on the following thinking. A good predictor will have low bias and low variance. A deep decision tree has low bias, but high variance. To reduce the variance, multiple trees are fit and averaged together. By introducing randomness in the construction of the trees, the correlation between them is reduced, to facilitate the variance reduction.
+
+Use the following variables: \texttt{Lat}, \texttt{Long}, \texttt{ListPrice}, \texttt{SaleYear}, \texttt{Bathroom}, \texttt{Bedroom}, \texttt{BuildDecade}, \texttt{MajorRenov}, \texttt{FinishSqFt}, \texttt{LotSqFt}, \texttt{MSA}, \texttt{City}, \texttt{HighSchool}, \texttt{SalePrice}. You will build regression models to predict \texttt{SalePrice}.
+
+Read in the training and test sets:
+```{r}
+set.seed(5)
+train <- read.csv("zillow_train.csv")
+test <- read.csv("zillow_test.csv")
+```
+
+We are only using 14 of the 24 variables, so we'll strip the unneccessary data for the purposes of cleanliness and storage.
+```{r}
+t <- colnames(train)
+using <- match(c("Lat", "Long", "ListPrice", "SaleYear", "Bathroom", "Bedroom", "BuildDecade", "MajorRenov", "FinishSqFt", "LotSqFt", "MSA", "City", "HighSchool", "SalePrice"), t)
+train <- train[, using]
+test <- test[, using]
+
+train$SaleYear <- as.factor(train$SaleYear)
+```
+
+## Part a. 
+Explore the data. As usual, you might ask yourself what $n$ and $p$ are here. Make plots of the distributions of the variables. Include a plot of the response, \texttt{SalePrice}. Does it appear that the data are “raw” or that they have been pre-processed in different ways? If so, how?
+
+### Answer
+There are so many observations in this dataset, so let's use a small sample (500 observations) to visualize and plot everything.
+```{r}
+
+mini <- train[sample(1:82728, 5000),]
+
+for(i in 1:ncol(mini)) {
+  name <- colnames(train)[i]
+  if(class(train[,i]) == 'numeric') {
+      hist(train[,i], main=name)
+  } else {
+    barplot(table(train[,i]), main=name)
+  }
+}
+```
+
+Let's go in specifically on the location of the house vs. sale price.
+```{r}
+library(ggplot2)
+library(ggmap)
+library(maps)
+library(mapdata)
+
+lat <- mini$Lat
+long <- mini$Long
+price <- mini$SalePrice
+MSA <- mini$MSA
+
+usa <- map_data("usa")
+
+gg0 <- ggplot() + geom_polygon(data = usa, aes(x = long, y = lat, group = group), fill=NA, color="blue") + coord_fixed(1.3) +  scale_color_gradientn(colors = rev(rainbow(7)), trans = "log10")
+
+points <- data.frame(lat, long, price, MSA)
+
+gg0 + geom_point(data = points, aes(x=long, y=lat, color=price), size=1)
+
+```
+It looks like the cheapest housing is in Dallas and Chicago, while the higher priced housing is in LA and New York. 
+
+Let's look at each cluster more closely.
+```{r}
+cities <- as.data.frame(table(factor(points$MSA)))
+```
+
+```{r}
+map_vizr <- function(n, vizr) {
+  sbbox1 <- make_bbox(lon = points[which(cities[n,1] == points$MSA), ]$long, lat = points[which(cities[n,1] == points$MSA), ]$lat, f = .1)
+  
+  sq_map1 <- get_map(location = sbbox1, maptype = vizr, source = "google")
+  
+  ggmap(sq_map1) + geom_point(data = points[which(cities[n,1] == points$MSA), ], aes(x=long, y=lat, color=price), size = 1) + coord_fixed(xlim = range(points[which(cities[n,1] == points$MSA), ]$long ), ylim = range(points[which(cities[n,1] == points$MSA), ]$lat ), ratio = 1.3) + scale_color_gradientn(colors = rev(rainbow(7)), trans = "log10")
+}
+
+map_vizr(1, "terrain")
+map_vizr(2, "terrain")
+map_vizr(3, "terrain")
+map_vizr(4, "terrain")
+
+```
+
+$n$ is the number of observations, aka the size of the dataset. $p$ is the number of predictors, which is given as $p = 13$. It looks like, based on the mapping, that the price of the house correlates with the distance from the downtown center of the location. There might also be more affluent neighborhoods near those cities, which could be determined based on price clustering. The sales and list price data appears to have been rounded to an integer value. From a positive standpoint, it's unlikely that in these areas we wouldn't find a house valued at more than $1.2 million. So there must have been some clearing of outliers.
+
+## Part b.
+Some of the variables in the data are categorical; how many values do they take? Why might factor variables with many categories present a problem when fitting decision trees? Describe a couple different ways of handling factor variables when fitting decision trees. 
+
+### Answer
+```{r}
+length(table(train$SaleYear)) # 9 cities
+length(table(train$BuildDecade)) # 29 different decades
+length(table(train$MajorRenov)) # 113 years of renovations
+length(table(train$MSA)) # 4 major metropolitan areas
+length(table(train$City)) # 1291 cities
+length(table(train$HighSchool)) # 655 high schools
+```
+
+Factoring the categorical variables would assign numerical values to those categoricals, which is bad because they're not ordered. The tree would thus be correlating to non-meaningful information. One possible way to handle variables when fitting decision trees is fitting the tree using the numericals, then treating each categorical as a possible branch to move down on at each level. This would certainly increase the complexity of the tree, so you could try pruning the tree after training. Alternatively, you could merge the categorical options together to form groups, there being $2^n$ possible groups if there are $n$ categoricals. So at some branch, what would start as \texttt{New York City}, \texttt{Los Angeles}, \texttt{Dallas}, and \texttt{Chicago} could become $\{ \texttt{New York City}, \, \texttt{Los Angeles} \}$ and $\{ \texttt{Dallas}, \, \texttt{Chicago} \}$ as two branches at some node. 
+
+Now we will use a few methods to predict \texttt{SalePrice}. Throughout, evaluate the predictions in terms of the absolute relative error:
+$$
+\frac{1}{n} \sum_{i = 1}^n \frac{| Y_i - \hat Y_i |}{Y_i} 
+$$
+Explain why this is an appropriate choice of accuracy, compared with squared error. 
+
+### Answer
+This choice of error gives us the average percent error of our sale price prediction; it is more meaningful than an MSE because an MSE would give us the units of dollars squared, which doesn't have any real significance. In addition, if we were to use MSE, the errors caused by inexpensive home price prediction would have lower sway than the errors caused by expensive home price prediction, which would mean we are partially neglecting the cheaper homes. Consider if we have a predictor that predicts an expensive home's price to be \$1,1000,000, but the actual price is \$1,000,000, and that predictor also predicts 10 \$100,000 homes to be \$90,000. If we use MSE, the errors induced by 10 cheaper price observations is the same as the error induced by a single expensive error. However, we want a predictor that works well regardless of the price. If we use the average percent error, then each home price estimate's error contributes equally, (10% in all the previously mentioned observations) regardless of the price.
+
+## Part c. 
+Build random forest models to predict \texttt{SalePrice} from the other covariates, using the R package \texttt{ranger}. The parameters to vary are \texttt{num.trees} and \texttt{min.node.size}; these regulate the variance and bias. Another parameter is \texttt{mtry}, which is the total number of variables allowed in splits; this regulates the correlation between the trees by introducing randomness. In addition, the \texttt{ranger} package has multiple options for how to handle factor variables; choose the one you think is best.
+
+Since the dataset is so large, and training on the entire set each time would be computationally prohibitive, we'll train on a random subset to determine our optimal parameters, then train the final model on the entire training set using the parameters we determined on the smaller set.
+```{r}
+set.seed(5)
+library(ranger)
+
+mini <- train[sample(1:82728, 1000),]
+
+tree_error <- function(n_trees, mtry_val, min_node_size) {
+  # break up the dataset into fifths
+  cv.indices <- matrix(sample(c(1:nrow(mini)), nrow(mini)), 5, nrow(mini)/5)
+  
+  sub_erf <- vector()
+  
+  for(fold in 1:nrow(cv.indices) ) {
+  
+    # observations for each fold
+    validate.vars <- mini[cv.indices[fold, ], -match("SalePrice", colnames(mini))]
+    validate.labels <- mini[cv.indices[fold, ], match("SalePrice", colnames(mini))]
+    subtrain <- mini[-cv.indices[fold, ], ]
+  
+    # train a model on the subtraining data
+    fit <- ranger( SalePrice ~ ., data=subtrain, num.trees = n_trees, mtry = mtry_val, min.node.size = min_node_size, respect.unordered.factors = 'order', seed = 5)
+  
+    predictions <- predict(fit, validate.vars, seed = 5)
+  
+    sub_erf[fold] <- mean( abs(validate.labels - predictions$predictions) / validate.labels)
+  }
+  error <- mean(sub_erf)
+  return(error)
+}
+
+tree_error(100,10,1)
+```
+
+To determine the optimal number of trees:
+```{r}
+# vary the number of trees
+
+# first, parse by multiples of 200
+err_v_ntree_log <- vector()
+for(i in 1:6) {
+  err_v_ntree_log[i] <- tree_error(10 + 200*i, 10, 1)
+}
+# get the minimum
+ntree_min_log <- which(min(err_v_ntree_log) == err_v_ntree_log)*200 + 10
+
+# then, parse by factors of 34
+err_v_ntree <- vector()
+for(i in 1:6) {
+  err_v_ntree[i] <- tree_error( ntree_min_log + 34*i, 10, 1)
+}
+
+ntree_min <- ntree_min_log + which(min(err_v_ntree) == err_v_ntree)*34
+```
+
+Next, to determine the mtry, aka the number of parameters per tree:
+```{r}
+# vary the number of parameters
+err_v_mtry <- vector()
+for(i in 1:12) {
+  err_v_mtry[i] <- tree_error(ntree_min, i, 1)
+}
+
+min_mtry <- which(min(err_v_mtry) == err_v_mtry)
+
+min_mtry
+plot(err_v_mtry)
+```
+
+```{r}
+# vary the node size
+err_v_node_log <- vector()
+for(i in 1:9) {
+  err_v_node_log[i] <- tree_error(ntree_min, min_mtry, 2^i)
+}
+
+min_node_log <- 2^which(min(err_v_node_log) == err_v_node_log)
+
+err_v_node <- vector()
+for(i in 1:10) {
+  err_v_node[i] <- tree_error(ntree_min, min_mtry, min_node_log + i)
+}
+
+min_node <- min_node_log + (which(min(err_v_node) == err_v_node))
+
+plot(err_v_node)
+```
+
+Train several random forest models, using different configurations of parameters. Evaluate each using 5-fold cross validation. Which setting of the parameters performs best? Comment on your findings and explain why they do or do not make sense to you.
+
+```{r}
+tree_error(ntree_min, min_mtry, min_node)
+```
+
+### Answer
+Based on these trials, the optimal tree parameters are $1112$ trees, $12$ parameters per tree, and a minimum node size of $6$ nodes. The minimum error is $.0319$. This greedy approach may not be the optimal fit, as I have previously found errors of $\approx .02$. These findings are a bit off from what I would have expected.
+
+In general, if we increase the number of trees in a random forest, we decrease the variance because we are averaging the results of many trees. If we have too many trees, we might overfit, because the decisions can become too attuned to individual observations. For the number of parameters, we typically want the square root of the number of available parameters, as this is enough parameters to model different kinds of interactions between variables, but still keeps the correlation between variables low. Finally, regarding the minimum node size, if we have a high minimum node size we are increasing the bias, and if we have a low minimum node size we are increasing the variance because the nodes become more fine grained.
+
+## Part d. 
+Now build models using gradient tree boosting, using the R package \texttt{xgboost}. The parameters to vary are \texttt{max.depth}, \texttt{eta}, and \texttt{nrounds}, which regulate the maximum depth of each tree, the step size, and the number of trees in the final model. Try several different runs of gradient boosting, each time using a different configuration of the parameters. As above, evaluate each using 5-fold cross validation. Which setting of the parameters performs best? Comment on your findings and explain why they do or do not make sense to you.
+
+```{r}
+library(xgboost)
+bst.error <- function(rounds, eta, depth) {
+  set.seed(5)
+  cv.indices <- matrix(sample(c(1:nrow(mini)), nrow(mini)), 5, nrow(mini)/5)
+  
+  bst.sub_erf <- vector()
+  for(fold in 1:nrow(cv.indices) ) {
+    validate <- mini[cv.indices[fold, ], ]
+    validate.vars <- mini[cv.indices[fold, ], -match("SalePrice", colnames(mini))]
+    validate.labels <- mini[cv.indices[fold, ], match("SalePrice", colnames(mini))]
+    subtrain <- mini[-cv.indices[fold, ], ]
+    subtrain.vars <- mini[-cv.indices[fold, ], -match("SalePrice", colnames(mini))]
+    subtrain.labels <- mini[-cv.indices[fold, ], match("SalePrice", colnames(mini))]
+
+    bst.fit <- xgboost(data = data.matrix(subtrain.vars), label=(subtrain.labels), nrounds = rounds, eta = eta, max.depth = depth, set.seed(5), verbose = 0)
+    bst.predictions <- predict(bst.fit, data.matrix(validate.vars))
+
+
+    bst.sub_erf[fold] <- mean( abs(validate.labels - bst.predictions) / validate.labels)
+  }
+  
+  bst.error <- mean(bst.sub_erf)
+  return(bst.error)
+}
+```
+
+We will greedily determine the parameters, starting with depth.
+```{r}
+
+depth_log <- vector()
+for(i in 1:10) {
+  depth_log[i] <- bst.error(200, .4, 10*i)
+}
+
+depth_log_min <- 10*which(min(depth_log) == depth_log)
+
+depth <- vector()
+for(i in 1:10) {
+  depth[i] <- bst.error(200, .4, depth_log_min + (i - 5))
+}
+
+plot(depth)
+depth_min <- depth_log_min + which(min(depth) == depth)
+depth_min
+```
+Now, since we are using a boosting algorithm, the number of rounds and the learning rate $\eta$ work in tandem. If we have an $\eta$ that is particularly low, say $.001$, then we will need a large number of rounds to see any sort of significant improvement. This is akin to having a high variance, where the number of possible models is large, as is the computational time to find the optimal one. If we have a large $\eta$, we can use less rounds to train, but at the cost of precision, thus increasing our bias. Thus, roughly speaking, if $n$ is the number of rounds, $n \times \eta$ is the total adaptability of the training procedure. 
+
+Note further that since boosting is usually very efficacious in preventing overfitting, we can likely have a high number of rounds without worrying about overfitting. However, at the cost of computational time, I want to limit the amount of rounds to $400$ total. Finally, since most data scientists use learning rates between $.01$ and $.001$, I will vary the values around these parameters.
+
+```{r}
+eta_error <- vector()
+for(i in 1:20) {
+  eta_error[i] <- bst.error(400, .005*i, depth_min)  
+}
+eta_min_log <- which(eta_error == min(eta_error))*.005
+plot(eta_error)
+```
+
+For number of rounds:
+```{r}
+nrounds_error <- vector()
+for(i in 1:20) {
+  nrounds_error[i] <- bst.error(20*i, eta_min_log, depth_min)  
+}
+nrounds_min <- which(nrounds_error == min(nrounds_error))*20
+plot(nrounds_error)
+```
+
+Thus the minimal error rate via our greedy approach is
+```{r}
+bst.error(nrounds_min, eta_min_log, depth_min)
+```
+### Answer
+
+The optimal parameters for the boosting algorithm are $.1$ for the learning rate, $400$ for the number of rounds, and $26$ for the depth of the tree. Let's try to rationalize this.
+
+For max depth, if we increase the depth, we also increase the variance, so we need to stop after a certain point otherwise we will overfit. Note that increasing the depth of the tree is akin to increasing the number of end leafs. The result of increasing the number of rounds of boosting is decreasing the variance, as for each round we add an additional hypothesis to the majority voting procedure, thus taking weighted averages. Thus, we need to increase our eta: if we had a small eta, the model would be too precise and increase our variance; thus we limit the variance by maintaining a modestly large eta. 
+
+## Part e. 
+Using your best model, predict the sale prices for the houses given in the test data. Report your error rate (again, the absolute relative error). In addition, show plots that compare the performance of boosting and random forests, as the number of component trees is varied.
+
+First, we'll train the the model using the best parameters on the entire training set. 
+```{r}
+
+train.vars <- train[, -match("SalePrice", colnames(train))]
+train.labels <- train[, match("SalePrice", colnames(train))]
+
+test.vars <- test[, -match("SalePrice", colnames(train))]
+test.labels <- test[, match("SalePrice", colnames(train))]
+
+total.bst.fit <- xgboost(data = data.matrix(train.vars), label=(train.labels), nrounds = 400, eta = eta_min_log, max.depth = depth_min, set.seed(5), verbose = 0)
+    
+total.bst.predictions <- predict(total.bst.fit, data.matrix(test.vars))
+
+bst.error <- mean( abs(total.bst.predictions - test.labels) / total.bst.predictions )
+
+bst.error
+```
+
+Thus the absolute relative error on the test set, after being trained on the entire training set, is `{r} bst.error`. This is extremely close to, and actually better than the validation error, meaning our model is not overfitting, and potentially has room for improvement.
+
+```{r}
+plot(err_v_ntree, axes=FALSE, xlab = "n trees", ylab = "mean absolute relative error", main="ranger")
+axis(1, at=1:7, seq(10, 1210, 200))
+axis(2)
+
+plot(nrounds_error, axes=FALSE, xlab="number of rounds", ylab="error", main="boosting")
+axis(1, at=1:20, seq(20, 400, 20))
+axis(2)
+```
+
+
+
+
+
+
+
+
+
+
+
+
