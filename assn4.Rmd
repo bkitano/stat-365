@@ -1,0 +1,556 @@
+---
+title: "Assignment 4"
+author: "Statistics and Data Science 365/565"
+date: "Due: October 24 (before 9:00 am)"
+output:
+  pdf_document: 
+     highlight: haddock
+  html_document: default
+params:
+  ShowCode: no
+  ShowOut: no
+---
+
+\newcommand{\trans}{{\scriptstyle T}}
+\newcommand{\reals}{\mathbb R}
+\newcommand{\argmin}{\mathop{\rm arg\,min}}
+\let\hat\widehat
+
+This homework focuses on the topics of leave-one-out cross validation (problem 1),  nonparametric regression (problem 2), generalized additive models (problem 3), and tree-based methods (problem 4).
+
+# Problem 1 (5 points)
+
+Let $\{x_i, Y_i\}_{i=1}^n$ be data for a regression problem, and let $\hat{m}_n$ be a linear smoother to estimate the regression function $m(x_i) = \mathbb{E}(Y_i\, |\, x_i)$. This means that the fitted values $\hat Y_i  = \hat{m}_n(x_i)$ are given by $\hat Y = L Y$, where $L$ is an $n\times n$ matrix.
+
+Show that the leave-one-out cross validation score $\hat{R}$ can be written as 
+$$
+\hat{R} = \frac{1}{n}\sum_{i=1}^n\left(\frac{Y_i-\hat{m}_n(x_i)}{1-L_{ii}}\right)^2
+$$
+where $L_{ii}$ is the $i$th diagonal element of the smoothing matrix $L$.
+
+### Answer (With major help from Jack Roth)
+Our goal is to find
+$$
+\hat R = \frac{1}{n} \sum_{i=1}^n \text{MSE}_i
+$$
+where $\text{MSE}_i = (y_i - \hat y _{-i})$. Note that $y_{-i}$ is the LOOCV test on the ith observation.
+
+For $\hat Y_i$, 
+$$
+\hat Y_i = \hat y_i = (LY)_i = L_{i1}Y_1 + L_{i2}Y_2 + \cdots = \sum_{j=1}^n L_{ij}Y_j
+$$
+and we also are given that 
+$$
+\hat Y_i = \hat m_n(x_i) = \frac{\sum_{j=1}^n Y_j \, K_h(x_j, x_i)}{\sum_{j=1}^n K_h(x_j, x_i)}
+$$
+and thus 
+$$
+\sum_{j=1}^n L_{ij}Y_j = \frac{\sum_{j=1}^n Y_j \, K_h(x_j, x_i)}{\sum_{j=1}^n K_h(x_j, x_i)}
+$$
+We know, however, that the sum over the kernel is 1, since that's the value of the normal distribution, and that for any $i$ and $j$, $K_h(x_i,x_i) = L_{ii}$, simply because of the equality and the effect of a linear smoother. Thus
+$$
+\hat m (x_i) = \sum_{j=1}^n Y_j\,K_h(x_j,x_i).
+$$
+We now consider the LOOCV term, $\hat y_{-i}$. Note that
+$$
+\hat y_{-i} = (LY)_{-i} = \sum_{j \neq i}^n L_{ij}\, Y_j = \frac{\sum_{j\neq i} Y_j \, K_h(x_i,x_j)}{\sum_{j\neq i} K_h(x_i, x_j)}
+$$
+by the relation established earlier. Note that although is not included in the sum, we can easily insert it and subtract it later. Thus
+$$
+\hat y_{-i} = \frac{\sum_{j} Y_j \, K_h(x_i,x_j) - Y_iK_h(x_i,x_i)}{\sum_{j} K_h(x_i, x_j) - K_h(x_i,x_i)}
+$$
+Plugging back in our earlier results
+$$
+\hat y_{-i} = \frac{\hat m(x_i)}{1 - L_{ii}} - \frac{y_iL_{ii}}{1 - L_{ii}}
+$$
+When we finally plug everything back in,
+$$
+\hat R = \frac{1}{n} \sum_{i=1}^n \text{MSE}_i = \frac{1}{n}\sum_{i=1}^n(y_i - \hat y_{-i})^2
+$$
+which we now know is
+$$
+\frac{1}{n}\sum_{i=1}^n \left( y_i - \frac{\hat m(x_i)}{1 - L_{ii}} + \frac{y_iL_{ii}}{1 - L_{ii}} \right)^2
+$$
+When we distribute the denominator, we yield
+$$
+\frac{1}{n}\sum_{i=1}^n \left( \frac{y_i(1 - L_{ii}) - \hat m(x_i) + y_iL_{ii}}{1 - L_{ii}} \right)^2
+$$
+Note that the $y_iL_{ii}$ cancel, leaving
+$$
+\frac{1}{n}\sum_{i=1}^n \left( \frac{y_i- \hat m(x_i)}{1 - L_{ii}} \right)^2
+$$
+QED.
+# Problem 2 (20 points)
+
+The data for this problem are daily maximum 8-hour ozone concentrations (in parts-per-billion) at 153 sites in the US midwest near Lake Michigan, for 89 days during the summer of 1987. To get the data in R, install and load the package \texttt{fields} and use the command \texttt{data(ozone2)}. The list \texttt{ozone2} contains
+\begin{itemize}
+  \item \texttt{lon.lat}: longitudes and latitudes of the 153 stations;
+  \item \texttt{y}: measurements at each stations on each day;
+  \item \texttt{station.id} and \texttt{dates}.
+\end{itemize}
+Your task in this problem is to estimate the ozone concentrations of the area on June 18, 1987 using a kernel smoother.
+
+```{r}
+library(fields)
+
+data("ozone2")
+```
+
+## Part a
+
+Specify a grid on the longitude and the latitude using \texttt{x=seq(-93,-82,.1)} and \texttt{y=seq(40,46,.1)}.
+
+```{r}
+latitudes <- seq(-93, -82, .1)
+longitudes <- seq(40, 46, .1)
+```
+
+## Part b 
+
+Write your own code for a $2$-dimensional kernel smoother using a Gaussian kernel with bandwidth $h$. Pick a specific value of $h$, and use your smoother to estimate the ozone concentrations at the grid points.
+
+$$
+\hat m_h(x) = \frac{\sum_{i=1}^n Y_i \, K_h(X_i, x)}{\sum_{i=1}^n K_h(X_i, x)} 
+$$
+where 
+$$
+K_h(X_i, x) = \exp\left({-\frac{||X_i - x||^2}{2h^2}}\right)
+$$
+and $h > 0$ is the bandwidth.
+
+```{r}
+K <- function(xi, x, h) {
+  num = sum((xi - x)^2)
+  den = 2*h^2
+  return(exp(-(num / den))) 
+}
+```
+
+The objective of the problem is to extrapolate the ozone concentration over a certain coordinate $(x_0, y_o)$ on June 18, 1987 ("870618" in the \texttt{ozone2\$dates} table). Thus our $x$-vals will be a pair of coordinates, and our $y$-vals will be the estimated concentration.
+
+```{r}
+m <- function(position, h) {
+  # 1. get the ozone data for all sites on June 18, 1987
+  # get the row val
+  row <- match("870618", ozone2$dates)
+  # get the ozone data from the table
+  Y <- ozone2$y[row,]
+  sigma_Y <- sd(Y, na.rm = TRUE)
+  mu_Y <- mean(Y, na.rm = TRUE)
+  Y <- scale(Y)
+  
+  # 2. get the positions of the sites, then match them to a row val
+  X <- ozone2$lon.lat
+  
+  # if we scale the location data, we lose the distance metric.
+  #sigma_X <- c(sd(X[,1]), sd(X[,2]))
+  #mu_X <- c(mean(X[,1]), mean(X[,2]))
+  #X <- scale(X)
+  # position <- (position - mu_X) / sigma_X
+  
+  # 3. calculate the numerator and denominator of the kernel estimator
+  num <- 0
+  den <- 0
+  
+  for(i in 1:153) {
+    if(!is.na(Y[i])) {
+      k <- K(X[i,], position, h)
+      num <- num + Y[i] * k
+      den <- den + k
+    }
+  }
+  
+  # rescale
+  return(num / den * sigma_Y + mu_Y)
+}
+
+estimates <- data.frame()
+for ( i in 1:length(latitudes)) {
+  for (j in 1:length(longitudes)) {
+    estimates[i,j] <- m(c(latitudes[i],longitudes[j]), 1)
+  }
+}
+```
+## Part c
+
+Perform cross validation to choose the bandwidth $h$. Use the leave-one-out method from Problem 1. Plot the cross validation scores against the bandwidths. What value of the bandwidth will you use? Explain.
+
+```{r}
+# get the actual ozone records
+row <- match("870618", ozone2$dates)
+y_actual <- ozone2$y[row, ] 
+
+# in this context, X = [153 x 2] position matrix
+# x_i is a single position
+# n = 153
+
+leverage <- function(position) {
+  X <- ozone2$lon.lat
+  mu_x <- c(mean(ozone2$lon.lat[, 1]), mean(ozone2$lon.lat[,2]))
+  
+  num <- sum((position - mu_x)^2)
+  den <- sum((X - mu_x)^2)
+  return(1 / nrow(X) + num / den)
+}
+
+CV <- function(h) {
+  cv <- 0
+  for(i in 1:length(ozone2$station.id)) { # for all of the stations
+    
+    position_i <- c(ozone2$lon.lat[i,1], ozone2$lon.lat[i,2])
+    
+    y_i <- ifelse(is.na(y_actual[i]), 0, y_actual[i])
+    
+    h_i <- leverage(position_i)
+    m_i <- m(position_i, h)
+    
+    cv <- cv + ((y_i - m_i) / (1 - h_i))^2
+  }
+  cv <- cv / length(ozone2$station.id)
+  return(cv)
+}
+
+# finding the order of magnitude for h
+cv.mag <- vector()
+for(i in 1:11) {
+  cv.mag[i] <- CV(10^(i-6))
+}
+
+plot(c(1:11), cv.mag)
+
+cv.val <- vector()
+for( i in 1:9) {
+  cv.val[i] <- CV(i*10^-2)
+}
+
+plot(c(1:9), cv.val)
+
+h.optimal <- .03
+```
+## Part d
+
+Suppose $z$ is the matrix of size \texttt{length(x)} by \texttt{length(y)} containing your kernel smoothing estimates at the grid points. Visualize your estimate as a heatmap on a regional map by using the following command in R: \texttt{image.plot(x, y, z, col=rainbow(128,alpha=.5))}, \texttt{US(add=T, lwd=2, col=1)}.
+
+```{r}
+estimates <- data.frame()
+for ( i in 1:length(latitudes)) {
+  for (j in 1:length(longitudes)) {
+    estimates[i,j] <- m(c(latitudes[i],longitudes[j]), .03)
+  }
+}
+estimates <- as.matrix(estimates)
+
+image.plot(latitudes, longitudes, estimates, col=rainbow(128,alpha=.5))
+US(add = T, lwd= 2, col=1)
+```
+
+# Problem 3 (20 points)
+
+In a bike sharing system the process of obtaining membership, rental, and bike return is automated via a network of kiosk locations throughout a city. In this problem, you will try to combine historical usage patterns with weather data to forecast bike rental demand in the Capital Bikeshare program in Washington, D.C.
+
+```{r}
+bikes.train <- read.table('train.txt', header = TRUE)
+bikes.test <- read.table('test.txt', header = TRUE)
+```
+
+You are provided hourly rental data collected from the Capital Bikeshare system spanning two years. The file \texttt{train.txt}, as the training set, contains data for the first 19 days of each month, while \texttt{test.txt}, as the test set, contains data from the 20th to the end of the month. The dataset includes the following information:
+\begin{itemize}
+  \item \texttt{daylabel} - day number ranging from 1 to 731
+  \item \texttt{year}, \texttt{month}, \texttt{day}, \texttt{hour} - hourly date
+  \item \texttt{season} - 1 = spring, 2 = summer, 3 = fall, 4 = winter
+  \item \texttt{holiday} - whether the day is considered a holiday
+  \item \texttt{workingday} - whether the day is neither a weekend nor a holiday
+  \item \texttt{weather} - 1 = clear, few clouds, partly cloudy \\ 2 = mist + cloudy, mist + broken clouds, mist + few clouds, mist \\ 3 = light snow, light rain + thunderstorm + scattered clouds, light rain + scattered clouds \\ 4 = heavy rain + ice pallets + thunderstorm + mist, snow + fog
+  \item \texttt{temp} - temperature in Celsius
+  \item \texttt{atemp} - `feels like' temperature in Celsius
+  \item \texttt{humidity} - relative humidity
+  \item \texttt{windspeed} - wind speed
+  \item \texttt{count} - number of total rentals
+\end{itemize}
+Predictions are evaluated using the root mean squared logarithmic error (RMSLE), calculated as
+$$
+\sqrt{\frac{1}{n}\sum_{i=1}^n(\log(m_i+1)-\log(\hat{m}_i+1))^2}
+$$
+where $m_i$ is the true count, $\hat{m}_i$ is the estimate, and $n$ is the number of entries to be evaluated.
+
+## Part a
+
+For the purpose of evaluating your models, divide the training set into two parts: first 15 days of each month as your new training set and 16th to 19th as your validation set. Using this new training set, fit a linear model on the \texttt{count} numbers against (a subset of) the time and weather variables. You will first need to transform the \texttt{count} numbers to $\log(\texttt{count} + 1)$. Pick those variables that you think are relevant. Be careful about whether to include them numerically or as factors. You might also want to include any interaction terms that you think are necessary. Report the model that you fit, and report the RMSLE score evaluated on your own validation set.
+
+### Answer
+First, we partition the training set into a validation and a train.
+```{r}
+
+# prepare to partition
+indices <- which(bikes.train$day == c(16,17,18,19))
+
+# get rid of the data we aren't ever using
+bikes.train <- bikes.train[, -c(14,15)]
+
+# log the count vals
+bikes.train$count <- log(bikes.train$count + 1)
+
+# scale validation and train together
+bikes.train <- as.data.frame(scale(bikes.train))
+
+# partition
+bikes.validation <- bikes.train[indices, ]
+bikes.train <- bikes.train[-indices, ]
+```
+
+We then separate the validation labels from predictors.
+
+```{r}
+bikes.validation.labels <- bikes.validation[, 14]
+bikes.validation.predictors <- bikes.validation[, -c(14)]
+```
+
+Then we can fit a linear model. I believe the values that are most relevant are \texttt{atemp}, \texttt{season}, and \texttt{hour}. However, I also believe there might be some correlation between these values:
+
+```{r}
+fit <- glm(formula = count ~ atemp + factor(season) + factor(hour), family=gaussian, bikes.train)
+
+fit.predictions <- predict.glm(fit, newdata = bikes.validation.predictors, type = 'response')
+
+rmsle <- sqrt(mean((bikes.validation.labels - fit.predictions)^2))
+```
+The rmsle is `r rmsle`.
+
+## Part b
+
+Now keep working on the new training set and take a step further than the linear model. For the transformed \texttt{count} numbers, compute the mean hourly log counts for each day and make scatterplots of the means versus \texttt{daylabel}. To account for this main trend in terms of time, fit local linear regressions to the means against \texttt{daylabel}. After fitting the nonparametric curve, use the hourly residuals as your new responses, and fit the same model as in part (a). Report the score evaluated on the validation set. 
+
+### Answer
+```{r}
+# start with fresh data
+bikes.train <- read.table('train.txt', header = TRUE)
+bikes.test <- read.table('test.txt', header = TRUE)
+
+# prepare to partition
+indices <- which(bikes.train$day == c(16,17,18,19))
+
+# get rid of the data we aren't ever using
+bikes.train <- bikes.train[, -c(14,15)]
+
+# log the count vals
+bikes.train$count <- log(bikes.train$count + 1)
+
+# calculate a mean for each daylabel over all the hours.
+daylabel_mean <- vector()
+daylabels <- as.data.frame(table(bikes.train$daylabel))
+
+for(i in 1:nrow(daylabels)) {
+  daylabel_index <- which(bikes.train$daylabel == daylabels[i,1])
+  daylabel_mean[i] <- mean(bikes.train$count[daylabel_index])
+}
+
+plot(as.vector(daylabels[,1]), daylabel_mean)
+
+daylabel_loess <- loess(daylabel_mean ~ as.vector(daylabels[,1]), loess.control(surface="direct"))
+
+# loess.helper <- t(rbind(as.vector(daylabels[,1]), daylabel_loess$fitted))
+loess.predict <- predict(daylabel_loess, newdata = c(1:731), type='response')
+plot(c(1:731), loess.predict)
+
+# replace the count values with residuals
+bikes.loess <- bikes.train
+for( i in 1:length(daylabel_loess$residuals)) {
+  indices <- which(bikes.loess$daylabel == daylabels[i,1])
+  bikes.loess$count[indices] <- daylabel_loess$residuals[i]
+}
+
+# scale validation and train together
+bikes.train <- as.data.frame(scale(bikes.train))
+
+# partition
+bikes.validation <- bikes.loess[indices, ]
+bikes.train <- bikes.loess[-indices, ]
+
+bikes.validation.labels <- bikes.validation[, 14]
+bikes.validation.predictors <- bikes.validation[, -c(14)]
+
+```
+```{r}
+
+fit.loess <- glm(formula = count ~ atemp + factor(season) + factor(hour), family=gaussian, bikes.loess)
+
+fit.predictions <- predict.glm(fit.loess, newdata = bikes.validation.predictors, type = 'response')
+
+rmsle.loess <- sqrt(mean((bikes.validation.labels - fit.predictions)^2))
+```
+The validation msle for local linear regression is `r rmsle.loess`, much lower than the msle for the original fit (`r rmsle`).
+
+## Part c
+
+Now  be ``more nonparametric'' by fitting an additive model. Include \texttt{daylabel} in your model and treat it, along with other numerical variables such as temperature, nonparametrically. Again, report your model and the score obtained on the validation set. You can fit the additive model by using the \texttt{gam} package in R.
+
+```{r}
+library('gam')
+
+# start with fresh data
+bikes.train <- read.table('train.txt', header = TRUE)
+bikes.test <- read.table('test.txt', header = TRUE)
+
+# prepare to partition
+indices <- which(bikes.train$day == c(16,17,18,19))
+
+# get rid of the data we aren't ever using
+bikes.train <- bikes.train[, -c(14,15)]
+
+# log the count vals
+bikes.train$count <- log(bikes.train$count + 1)
+
+# scale validation and train together
+bikes.train <- as.data.frame(scale(bikes.train))
+
+# partition
+bikes.validation <- bikes.train[indices, ]
+bikes.train <- bikes.train[-indices, ]
+
+# divide labels from predictors
+bikes.validation.labels <- bikes.validation[, 14]
+bikes.validation.predictors <- bikes.validation[, -c(14)]
+
+# fit a nonparametric model
+fit.gam <- gam(count ~ factor(daylabel) + lo(weather) + lo(temp) + lo(atemp) + lo(humidity) + lo(windspeed), data = bikes.train) 
+
+fit.gam.predictions <- predict(fit.gam, newdata = bikes.validation.predictors, type= 'response')
+
+fit.gam.rmsle <- sqrt(mean((bikes.validation.labels - fit.gam.predictions)^2))
+
+```
+The rmsle for the general additive model is `r fit.gam.rmsle`.
+
+## Part d
+
+Now, based on the results you obtained for the previous problems, fit a model on the original training set, and predict the total rental counts for each entry in the test set. Record your predicted counts in a file \texttt{assn4-<your netid>.txt} and submit it on Canvas. Your file should contain only one column vector with 6493 entries. We will compute the RMSLE of the predictions, and the points you receive for this part will depend on your relative score. 
+A prize will be offered to the students from the residential college or graduate school having the best average score.
+
+### Answer
+Based on my findings, I will use a loess model to predict the test data.
+
+```{r}
+# predict the mean from the daylabel for the test data using the loess fit
+# get all the daylabels in the test data
+daylabels_test <- as.data.frame(table(bikes.test$daylabel))
+
+daylabels_test <- daylabels_test[,1]
+
+# get the test means
+daylabels_test_means <- vector()
+for (i in 1:length(as.vector(daylabels_test))) {
+  num <- daylabels_test[i]
+  daylabels_test_means[i] <- loess.predict[num]
+}
+
+# get the test residuals
+bikes.test$prediction <- predict.glm(fit.loess, newdata=bikes.test, type="response")
+
+# do the combining
+for(i in 1:length(daylabels_test)) {
+  num <- daylabels_test[i]
+  indices <- which(bikes.test$daylabel == num)
+  bikes.test$prediction[indices] <- bikes.test$prediction[indices] + daylabels_test_means[i]
+}
+
+```
+
+# Problem 4 (20 points)
+
+This problem is based on the \texttt{Carseats} data set from the \texttt{ISLR} package. We will seek to predict \texttt{Sales} using regression trees and related approaches, treating the response as a quantitative variable.
+
+```{r}
+library(ISLR)
+
+```
+## Part a
+
+Split the data set into a training set and a test set (50/50).
+
+```{r}
+indices = sample(c(1:400), 200)
+data.train <- Carseats[indices, ]
+data.test <- Carseats[-indices, ]
+```
+
+## Part b
+
+Fit a regression tree to the training set. Plot the tree, and interpret the results. What test MSE do you obtain?
+
+```{r}
+library('tree')
+
+tree <- tree(Sales ~ ., data.train)
+plot(tree, type="uniform")
+text(tree, all=TRUE, cex=.4)
+```
+```{r}
+
+# strip the sales data from the test set
+data.test.predictors <- data.test[, -1]
+data.test.labels <- data.test[, 1]
+
+tree.predictions <- predict(tree, newdata = data.test.predictors, type="vector")
+
+tree.mse <- mean((tree.predictions - data.test.labels)^2)
+
+summary(tree)
+```
+The mean squared error is `r tree.mse`.
+## Part c
+
+Use cross-validation in order to determine the optimal level of tree complexity. Does pruning the tree improve the test MSE?
+
+```{r}
+tree.cv <- cv.tree(tree)
+
+# determine the best size
+k.optimal <- tree.cv$size[which(tree.cv$dev==min(tree.cv$dev))] 
+
+tree.pruned <- prune.tree(tree, best = k.optimal, method = "deviance")
+plot(tree.cv$k, tree.cv$dev, type='b')
+tree.pruned.predictions <- predict(tree.pruned, newdata = data.test.predictors, type="vector")
+
+plot(tree.pruned)
+text(tree.pruned, all=TRUE, cex=.4)
+
+tree.pruned.mse <- mean((tree.pruned.predictions - data.test.labels)^2)
+
+```
+The mean squared error is `r tree.pruned.mse`. Pruning marginally, if at all, improves MSE.
+
+## Part d
+
+Use the bagging approach in order to analyze the data. What test MSE do you obtain? Use the \texttt{importance} function from the \texttt{randomForest} package to determine which variables are most important.
+
+```{r}
+library('randomForest')
+
+tree.bag <- randomForest(Sales ~ ., data = data.train, mtry = ncol(data.train)-1, importance=TRUE)
+
+tree.bag
+importance(tree.bag)
+
+tree.bag.predictions <- predict(tree.bag, data.test.predictors, type="response")
+
+tree.bag.mse <- mean((data.test.labels - tree.bag.predictions)^2)
+```
+
+The most important variables are Price, ShelveLoc, CompPrice, Age, and Advertising. The mean squared error is `r tree.bag.mse`.
+
+## part e
+
+Now use random forests to analyze the data. What test MSE do you obtain? Use the \texttt{importance} function to determine which variables are most important. Describe the effect of $m$,the number of variables considered at each split, on the error rate obtained.
+
+```{r}
+tree.rf <- randomForest(Sales ~ ., data = data.train, importance=TRUE)
+
+tree.rf
+importance(tree.rf)
+
+tree.rf.predictions <- predict(tree.rf, data.test.predictors, type="response")
+
+tree.rf.mse <- mean((data.test.labels - tree.rf.predictions)^2)
+```
+The most important variables here are ShelveLoc, Price, Advertizing, Age, and CompPrice. The mean squared error is `r tree.rf.mse`. It appears that the more uncorrellated the variables, the better the MSE; as a result, having fewer variables per tree increases the total number of uncorrellated variables, so fewer variables is better.
+

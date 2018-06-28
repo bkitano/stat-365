@@ -1,0 +1,687 @@
+---
+title: "Assignment 1"
+author: "Statistics and Data Science 365/565"
+date: 'Due: September 19 (before 9:00 am)'
+output:
+  pdf_document: default
+  html_document: default
+params:
+  ShowCode: no
+  ShowOut: no
+---
+
+\newcommand{\trans}{{\scriptstyle T}}
+\newcommand{\reals}{\mathbb R}
+\newcommand{\argmin}{\mathop{\rm arg\,min}}
+\let\hat\widehat
+
+This homework treats linear regression and classification, and gives you a chance to practice using R. If you have forgotten some definitions or terms from previous classes, see the file "notation.pdf" under the "Files" tab on Canvas. It should provide all you need to know to do this assignment. Remember that you are allowed to collaborate on the homework with classmates, but you must write your final solutions by yourself and acknowledge any collaboration at the top of your homework.
+
+
+
+# Problem 1: Two views of linear regression (10 points)
+
+Recall that in linear regression, we assume
+$$
+Y = X \beta + \epsilon
+$$
+where $Y \in \reals^n$ is the vector of responses (outcomes), $X \in \reals^{n \times (p + 1)}$ is the design matrix, where each row is a data point, and $\beta \in \reals^{p + 1}$ is the vector of parameters, including the intercept, and $\epsilon \in \reals^n$ is a noise vector. Assume throughout this problem that $X^\trans X$ is invertible.
+
+## View 1: $\hat \beta$ minimizes the Euclidean distance between $Y$ and $X \beta$.
+Suppose we make no assumptions about $\epsilon$. We simply want to find the $\beta$ that minimizes the Euclidean distance between $Y$ and $X \beta$, i.e., the $\ell_2$ norm of $Y - X \beta$. That is, we seek
+$$
+\hat \beta = \argmin_{\beta \in \reals^p} \Vert{Y - X \beta \Vert}^2.
+$$
+Derive an explicit form for the minimizer $\hat \beta$. Your derivation should
+involve calculating the gradient of the objective function $f(\beta) = \|Y-X\beta\|^2$,
+and solving for the $\beta$ that makes the gradient zero.  Express
+your solution as a function of the matrix $X$ and the vector $Y$.
+
+### Answer
+Let $X$ be an $n \times (m+1)$ data matrix, $Y$ be an $n \times 1$ vector, and $\beta$ be a $(m+1) \times 1$ vector. Our $\ell_2$ norm is given by the following formula: 
+
+$$
+RSS(\beta) = || Y-X\beta || ^ 2
+$$
+Note that we are trying to calculate the sum of these values, which should yield a $1 \times 1$ vector, thus we can represent the $\ell_2$ norm as the matrix product of $Y-XB$ and its own transpose. Thus
+$$
+RSS(\beta) = (Y-XB)^T (Y-XB).
+$$
+Expanding this product yields
+\[
+(Y-XB)^T(Y-XB) = (Y^T - B^TX^T)(Y-XB)
+\]\[
+= Y^TY - Y^TXB - B^TX^TY + B^TX^TXB
+\]
+Note the dimensions of each of these products: $Y^TY$, $B^TX^TY$, $Y^TXB$, and $B^TX^TXB$ are all $1 \times 1$. Firthermore, $B^TX^TY = (Y^TXB)^T$. Since these are one-dimensional, they are equal, thus
+\[
+RSS(\beta) = Y^TY - 2Y^TXB + B^TX^TXB.
+\]
+We are looking to minimze $RSS(\beta)$, so we will take the gradient of it with respect to $\beta$ and find its root (or roots).
+\[
+\frac{\partial}{ \partial \beta} RSS(\beta)= - 2Y^TX + B^TX^TX + X^TXB
+\]
+Since the last two terms are scalars, we can add them. So $B$ satisfies the following relation:
+\[
+2B^TX^TX = 2Y^TX,
+\]
+or
+\[
+X^TXB = X^TY.
+\]
+Multiplying both sides with $(X^TX)^{-1}$ yields
+\[
+\hat B = (X^TX)^{-1}X^TY.
+\]
+
+## View 2: $\hat \beta$ is the MLE in a normal model.
+Suppose we assume the same linear regression model as above, but now we assume that the $\epsilon_i$ are independent and identically distributed as $N(0, \sigma^2)$. Therefore, we can write
+$$
+Y \sim N(X \beta, \sigma^2 I_n),
+$$
+meaning that $Y$ has a multivariate normal distribution with mean $X \beta$ and diagonal covariance matrix $\sigma^2 I_n$. Recall that for a vector $X \sim N(\mu, \Sigma)$, the density is
+$$
+f(x) = \frac{1}{\sqrt{| 2\pi\Sigma|}} \exp \Bigl(- \frac{1}{2}(x - \mu)^T \Sigma^{-1} (x - \mu)\Bigr).
+$$
+To derive the maximum likelihood estimator under this model, 
+maximize the log density of $Y$ as a function of $\beta$, assuming that $\sigma^2$ is known.
+Show that the maximizer is the same as that obtained under View 1.
+
+Let's look at this formula from a pointwise perspective, then move it back into vector form.
+$f(x) = \frac{1}{\sqrt{\det{2\pi\Sigma}}}e^{-\frac{1}{2}(x-\mu)^T\Sigma^{-1}(x-\mu)}$ in vector form is equivalent to 
+\[
+{L}_{x} = \frac{1}{\Pi_{i=1}^{n} \sigma_i^2}e^{-\frac{1}{2}\left( \sum_{i=1}^{n} \frac{(x_i-\mu)^2}{\sigma_i} \right)}.
+\]
+When we take the log of this function, we yield 
+\[
+\log L_x = -\frac{1}{2} \log (2\pi\sigma_1 \cdot 2\pi\sigma_2 \cdots 2\pi\sigma_n) - \frac{1}{2\sigma_i} \left(\sum_{i=1}^n x_i^2 - 2\mu x + \mu^2 \right),
+\]
+or
+\[
+\log L_x = -\frac{n}{2}\log2\pi - \sum_{i=1}^n \log \sigma_i - \frac{1}{2}\sum_{i=1}^n \left( \frac{x_i^2}{\sigma_i} - 2\frac{\mu x_i}{\sigma_i} + \frac{\mu^2}{\sigma_i} \right)
+\]
+Now, substituting back in our vectors,
+\[
+\log L_x = -\frac{n}{2}\log2\pi - \sum_{i=1}^n \log \sigma_i - \frac{1}{2} \left( {Y^T(\sigma I_n)^{-1}Y} - 2{Y^T(\sigma I_n)^{-1}XB} + {B^TX^T(\sigma I_n)^{-1}XB} \right)
+\]
+Since $\sigma I_n$ is diagonal, the inverse is just the multiplicative inverse of the diagonals, so
+\[
+\log L_x = -\frac{n}{2}\log2\pi - \sum_{i=1}^n \log \sigma_i - \frac{1}{2} \left( {Y^T(\frac{1}{\sigma} I_n)Y} - 2{Y^T(\frac{1}{\sigma} I_n)^{-1}XB} + {B^TX^T(\frac{1}{\sigma} I_n)^{-1}XB} \right)
+\]
+Taking the partial derivative of this function with respect to $B$ eliminates many terms:
+\[
+\frac{\partial}{\partial B} (\log L_x) = - \frac{1}{2} \left( - 2{Y^T(\frac{1}{\sigma} I_n)^{-1}X} + {B^TX^T(\frac{1}{\sigma} I_n)^{-1}X} + {X^T(\frac{1}{\sigma} I_n)^{-1}XB} \right)
+\]
+We are now looking to determine where $\frac{\partial}{\partial B} (\log L_x)=0$, or
+\[
+0 = {Y^T(\frac{1}{\sigma} I_n)^{-1}X} -\frac{1}{2} \left( {B^TX^T(\frac{1}{\sigma} I_n)^{-1}X} + {X^T(\frac{1}{\sigma} I_n)^{-1}XB} \right)
+\]
+So
+\[
+\frac{1}{2} \left( B^TX^T(\frac{1}{\sigma} I_n)^{-1}X + {X^T(\frac{1}{\sigma} I_n)^{-1}XB} \right)= Y^T(\frac{1}{\sigma} I_n)^{-1}X 
+\]
+We can eliminate the standard deviation term on both sides, so
+\[
+B^TX^TX = Y^TX 
+\]
+Thus
+\[
+B^T = Y^TX(X^TX)^-1
+\]
+or
+\[
+B = (Y^TX(X^TX)^{-1})^T =  (X^TX)^{-1} X^T Y 
+\]
+This is the same equation as in View 1. QED.
+
+# Problem 2: Linear regression and classification (30 points)
+
+Citi Bike is a public bicycle sharing system in New York City. There are hundreds of bike stations scattered throughout the city. Customers can check out a bike at any station and return it at any other station. Citi Bike caters to both commuters and tourists. Details on this program can be found at https://www.citibikenyc.com/
+
+For this problem, you will build models to predict Citi Bike usage, in number of trips per day.
+The dataset consists of Citi Bike usage information and weather data recorded from Central Park. 
+
+In the citibike_*.csv files, we see:
+
+1. date
+
+2. trips: the total number of Citi Bike trips. This is the outcome variable.
+
+3. n_stations: the total number of Citi Bike stations in service
+
+4. holiday: whether or not the day is a work holiday
+
+5. month: taken from the date variable
+
+6. dayofweek: taken from the date variable
+
+In the weather.csv file, we have:
+
+1. date
+
+2. PRCP: amount precipitation (i.e. rainfall amount) in inches 
+
+3. SNWD: snow depth in inches
+
+4. SNOW: snowfall in inches
+
+5. TMAX: maximum temperature for the day, in degrees F
+
+6. TMIN: minimum temperature for the day, in degrees F
+
+7. AWND: average windspeed
+
+You are provided a training set consisting of data from 7/1/2013 to 3/31/2016, and a test set consisting of data after 4/1/2016. The weather file contains weather data for the entire year. 
+
+## Part a: Read in and merge the data.
+
+To read in the data, you can run, for example:
+```{r read.data, include=TRUE}
+train <- read.csv("citibike_train.csv")
+test <- read.csv("citibike_test.csv")
+weather <- read.csv("weather.csv")
+```
+
+Merge the training and test data with the weather data, by date. Once you have successfully merged the data, you may drop the "date" variable; we will not need it for the rest of this assignment.
+```{r}
+train <- merge(train, weather, by='date')
+test <- merge(test, weather, by='date')
+
+train <- subset(train, select=-date)
+test <- subset(test, select=-date)
+```
+
+As always, before you start any modeling, you should look at the data. Make scatterplots of some of the numeric variables. Look for outliers and strange values. Comment on any steps you take to remove entries or otherwise process the data. Also comment on whether any predictors are strongly correlated with each other. 
+```{r}
+# turn all the months into numeric values
+train$month <- match(train$month,month.abb)
+test$month <- match(test$month,month.abb)
+
+# turn all the days into numerica vals, day 1 = monday
+days.abb = c("Mon","Tues","Wed","Thurs","Fri","Sat","Sun")
+train$dayofweek <- match(train$dayofweek, days.abb)
+test$dayofweek <- match(test$dayofweek, days.abb)
+
+# pairs function
+pairs(train[ ,-3])
+pairs(test[ ,-3])
+
+# it looks like there are some weird windspeed vals
+hist(train$AWND)
+hist(test$AWND)
+
+# strip these obviously erroneous values
+train <- train[!(train$AWND == -9999.0), ]
+test <- test[!(test$AWND == -9999.0), ]
+
+# it also looks like there are some weird precipiation vals?
+hist(train$PRCP)
+hist(test$PRCP)
+
+# it also looks like there's weird stuff in test$SNWD and test$SNOW
+hist(test$SNOW)
+hist(test$SNWD)
+
+# ahh it's because those variables are all 0
+# double check to see all the cleansed data
+pairs(train[, -3])
+pairs(test[, -3])
+
+```
+
+
+## Comment
+
+For the rest of this problem, you will train your models on the training data and evaluate them on the test data.
+
+
+## Part b: Linear regression
+
+Fit a linear regression model to predict the number of trips. Include all the covariates in the data. Print the summary of your model using the R \texttt{summary} command. Next, find the "best" linear model that uses only $p$ variables,
+for each $p=1,2,3,4,5$.  It is up to you to choose how to select the "best" subset of variables. 
+(A categorical variable or factor such as "month" corresponds to a single variable.) Describe how you selected 
+each model. Give the $R^2$ and the mean squared error (MSE) on the training and test set for each of the models. 
+Which model gives the best fit to the data? Comment on your findings.
+
+```{r}
+fit.all <- lm(train$trips ~ train$n_stations + train$holiday + train$month + train$dayofweek + train$PRCP + train$SNWD + train$SNOW + train$TMAX + train$TMIN + train$AWND)
+
+summary(fit.all)
+
+fit <- lm(train$trips ~ ., data = train[c(1,2,3)]) 
+RSE <- sqrt(deviance(fit)/df.residual(fit))
+
+results <- data.frame()
+
+for(i in 1:5) {
+  
+  index <- 0
+  best <- Inf
+  vars <- ""
+  
+  c <- combn(c(1:11), i)
+  
+  for (j in 1:length(c[1,])) {
+    fit <- lm(train$trips ~ ., data = train[c[,j]])
+    RSE <- sqrt(deviance(fit)/df.residual(fit))
+    if (RSE < best) {
+      index <- j
+      best <- RSE
+      variables <- colnames(train)[c[,j]]
+      vars <- paste(variables, collapse = "|")
+    }
+  }
+  
+  results[i,1] <- i
+  results[i,2] <- best
+  results[i,3] <- index
+  results[i,4] <- vars
+}
+
+print(results)
+```
+The best fit is when the parameters are n_stations, TMAX, holiday, dayofweek, and PRCP.
+
+## Part c: KNN Classification
+
+Now we will transform the outcome variable to allow us to do classification. Create a new vector $Y$ with entries:
+$$
+Y[i] = \mathbf{1} \{ trips[i] > median(trips) \}
+$$
+
+Use the median of the variable from the full data (training and test combined). After computing
+the binary outcome variable $Y$, you should drop the original trips variable from the data.
+```{r}
+# merge the training and the test into one dataframe
+all_trips <- rbind(train, test)
+
+median_trip <- median(all_trips[,1])
+
+for (i in 1:length(all_trips[, 1])) {
+  if (all_trips[i,1] > median_trip) {
+    all_trips[i, 12] <- 1
+  } else {
+    all_trips[i, 12] <- 0
+  }
+}
+
+# clearing n_trips 
+all_trips <- all_trips[, -1]
+
+colnames(all_trips)[11] <- "above_median"
+```
+
+Recall that in $k$-nearest neighbors classification, the predicted value $\hat Y$ of $X$ is 
+the majority vote of the labels for the $k$ nearest neighbors $X_i$ to $X$. We will use the Euclidean distance as our measure of distance between points. Note that the Euclidean distance doesn't make much sense for factor variables, so just drop the predictors that are categorical for this problem. Standardize the numeric predictors so that they have mean zero and constant standard deviation---the R function \texttt{scale} can be used for this purpose.
+
+```{r}
+# drop categorical predictors
+all_trips.numerical <- all_trips[, -c(2,3,4)]
+
+# isolate the target vals
+all_trips.classifier <- all_trips[, 11]
+
+# Standardize the data
+all_trips.numerical <- scale(all_trips.numerical)
+
+# need to remove NaN data
+# train.numerical <- train.numerical[, -c(3,4)]
+# test.numerical <- test.numerical[, -c(3,4)]
+```
+
+Use the FNN library to perform $k$-nearest neighbor classification, using as the neighbors the labeled points in the training set. Fit a classifier for $k = 1:50$, and find the mis-classification rate on both the training and test sets for each $k$. On a single plot, show the training set error and the test set error as a function of $k$. How would you choose the optimal $k$? Comment on your findings, and in particular on the possibility of overfitting.
+```{r}
+
+library(FNN)
+
+train.numerical <- all_trips.numerical[1:998, ]
+train.target <- all_trips.classifier[1:998]
+
+test.numerical <- all_trips.numerical[999:1173, ]
+test.actual <- all_trips.classifier[999:1173]
+
+knn.errors = data.frame()
+for(i in 1:50) {
+  
+  # enumerate a column
+  knn.errors[i,1] <- i
+  
+  # calculate knn
+  knn.test = as.data.frame(knn(train = train.numerical, test = test.numerical, cl = train.target, k = i))
+  
+  knn.train = as.data.frame(knn(train = train.numerical, test = train.numerical, cl = train.target, k = i))
+
+  test.number.wrong <- sum(as.integer(test.actual != knn.test))
+  test.error <- test.number.wrong / length(test.numerical[,1])
+  
+  train.number.wrong <- sum(as.integer(train.target != knn.train))
+  train.error <- train.number.wrong / length(train.numerical[,1])
+  
+  knn.errors[i,2] <- train.error
+  knn.errors[i,3] <- test.error
+}
+
+plot(knn.errors[ ,1], knn.errors[ ,2], type='p', xlim=range(knn.errors[,1]), ylim=range(knn.errors[,2], knn.errors[, 3]), col="green", ylab="test errors in red, train errors in green", xlab="k value")
+points(knn.errors[,1], knn.errors[,3], type='p', col="red")
+```
+Our error values are increasing as we increase $k$. Optimal $k=1$. We are definitely overfitting the training data, as we are getting almost none wrong, which is a clear sign of overfitting.
+
+# Problem 3: Classification for a Gaussian Mixture (25 points)
+
+A Gaussian mixture model is a random combination of multiple Gaussians. Specifically, we can generate $n$ data points from such a distribution in the following way. First generate labels $Y_1, \hdots, Y_n$ according to 
+$$
+Y_i =
+\left\{
+	\begin{array}{ll}
+		0  & \mbox{with probability } 1/2 \\
+		 1 & \mbox{with probability } 1/2.
+	\end{array}
+\right.
+$$
+Then, generate the data $X_1, \hdots, X_n$ according to
+$$
+X_i \sim
+\left\{
+	\begin{array}{ll}
+		N(\mu_0, \sigma_0^2)  & \mbox{if } Y_i = 0 \\
+		N(\mu_1, \sigma_1^2) & \mbox{if } Y_i = 1.
+	\end{array}
+\right.
+$$
+Given such data $\{X_i\}$, we may wish to recover the true labels $Y_i$, which is a classification task.
+
+
+## Part a.
+
+Suppose we have a mixture of two Gaussians, $N(\mu_0, \sigma_0^2)$ and $N(\mu_1, \sigma_1^2)$, with $\mu_0 = 0, \mu_1 = 3$, and $\sigma_0^2 = \sigma_1^2 = 1$. Consider the loss function $\mathbf{1} \{ f(X) \ne Y \}$. What is the classifier that minimizes the expected loss?  Your classifier will be a function $f: \reals  \rightarrow \{ 0, 1 \}$, so write it as an indicator function. Show your work, and simplify your answer as much as possible. 
+
+What is the Bayes error rate? Again, show your work.
+
+We are constructing a classifier $h(x)$ which should be something along the lines of 
+$$
+f(x) = 
+\left \{
+	\begin{array}{ll}
+		1 & \mbox{if } \mathbb{E}(Y | X = x) > \frac{1}{2} \\
+		0 & \mbox{otherwise } 
+	\end{array}
+\right.
+$$
+$\mathbb{E} = P(Y = 1 \, | \, X = x)$, so 
+$$
+f(x) = 
+\left \{
+\begin{array}{ll}
+1 & \mbox{ if } P(Y = 1 \, | \, X = x) \\
+0 & \mbox{ otherwise}
+\end{array}
+\right.
+$$
+Let's expand the conditional probability. 
+$$
+P(Y = 1 \, | X = x) = \frac{P(X=x \, | \, Y=1)P(Y = 1)}{P(X=x \, | \, Y=1)P(Y=1) + P(X=x \, | \, Y = 0)P(Y=0)}
+$$
+
+IF we let $\pi_1 = P(Y=1)$, $p_1(x) = P(X=x \, | \, Y = 1)$, and $p_0(x) = P(X=x \, | \, Y = 0)$, then
+
+$$
+P(Y=1 \, | \, X=x) = \frac{p_1(x)\pi_1}{p_1(x) \pi_1 + p_0(x)(1-\pi_1) }
+$$
+We want this value to be greater than $\frac{1}{2}$, so
+$$
+\frac{p_1(x)\pi_1}{p_1(x) \pi_1 + p_0(x)(1-\pi_1) } > \frac{1}{2}
+$$
+Cross multiplying yields
+$$
+{2p_1(x)\pi_1} > {p_1(x) \pi_1 + p_0(x)(1-\pi_1)}
+$$
+and so
+
+$$
+p_1(x)\pi_1 > p_0(x)(1-\pi_1)
+$$
+or.
+$$
+\frac{p_1(x)}{p_0(x)} > \frac{1 - \pi_1}{\pi_1}
+$$
+Intuitively, this tells us that if the expected value for classifying $f(x) = 1$ is greater than the expected value of $f(x) = 0$, then we should classify it in $Y = 1$.
+
+We are given that $X_0$ and $X_1$ are normally distributed with means $\mu_0$ and $\mu_1 = 3$ (with $\sigma_0 = \sigma_1 = 1$), so we can say that $p_0(x)$ is the probability distribution of $X_0$, or 
+$$
+p_0(x) = \frac{1}{ \sqrt{2\pi} }e^{-\frac{1}{2} x^2}
+$$
+and similarly
+
+$$
+p_1(x) = \frac{1}{ \sqrt{2\pi} } e^{-\frac{1}{2} (x-3)^2}.
+$$
+
+Thus
+$$
+\frac{p_1(x)}{p_0(x)} = \frac{ e^{ -\frac{1}{2} (x-3)^2 } }{ e^{-\frac{1}{2} x^2} }.
+$$
+Simplifying yields
+$$
+\frac{p_1(x)}{p_0(x)} = e^{ -\frac{1}{2} (x-3)^2 + \frac{1}{2} x^2 } = e^{ 3(x-\frac{3}{2}) }
+$$
+We want $\frac{p_1(x)}{p_0(x)} > \frac{1 - \pi_1}{\pi_1}$, and $\frac{1 - \pi_1}{\pi_1} = 1$, so 
+$$
+e^{ 3 (x-\frac{3}{2}) } > 1.
+$$
+Taking the log of both sides and simplifying yields $3(x-\frac{3}{2})>0$, or $x > \frac{3}{2}$.
+
+Thus our final classifier function $f$ is given by 
+$$
+f(x) = 
+\left\{
+  \begin{array}{ll}
+    1 & \mbox{ if } x > \frac{3}{2} \\
+    0 & \mbox{ otherwise.}
+  \end{array}
+\right.
+$$
+Our Bayesian error is given by the probability of misclassification, or 
+
+$$
+E(x) = \mathbb{P} (f(x) \neq y)
+$$
+In this case, it is broken down into
+
+$$
+E(x) = P \left(Y=0 \, \bigg| \,   x > \frac{3}{2} \right) + P \left( Y = 1 \, \bigg| \, x \leq \frac{3}{2} \right)
+$$
+Note that visually, this is the overlap of the Gaussian distributions, or
+
+$$
+E(x) = \frac{1}{\sqrt{2\pi}} \int_\frac{3}{2}^{\infty} e^{-\frac{1}{2} x^2} dx + \frac{1}{\sqrt{2\pi}} \int^\frac{3}{2}_{-\infty} e^{-\frac{1}{2} (x-3)^2} dx
+$$
+```{r}
+E <- (1 - pnorm(3/2, 0, 1) + pnorm(3/2, 3, 0))
+print(E)
+```
+## Part b.
+
+Suppose we have the same mixture as in Part a, but now $\sigma_0^2 \ne \sigma_1^2$. What classifier minimizes the expected loss in this case?
+
+If the standard deviations are diffferent, then we can reformulate the equations as 
+$$
+p(x) = \frac{1}{\sqrt{2\sigma^2\pi}}e^{-\frac{(x-\mu)^2}{2 \sigma^2} }
+$$
+So
+$$
+\frac{p_1(x)}{p_0(x)} = 
+\frac{\sigma_0}{\sigma_1} 
+e^{\frac{1}{2} \left( \frac{(x-\mu_0)^2}{\sigma_0^2}-\frac{(x-\mu_1)^2}{\sigma_1^2} \right) } 
+$$
+This needs to be greater than $1$, so 
+$$
+\frac{\sigma_0}{\sigma_1} 
+e^{\frac{1}{2} \left( \frac{(x-\mu_0)^2}{\sigma_0^2}-\frac{(x-\mu_1)^2}{\sigma_1^2} \right) } > 1
+$$
+Taking the log of both sides yields
+
+$$
+\log{\frac{\sigma_0}{\sigma_1} } + 
+\frac{1}{2} \left( \frac{(x-\mu_0)^2}{\sigma_0^2}-\frac{(x-\mu_1)^2}{\sigma_1^2} \right) > 0
+$$
+or, simplified:
+$$
+\log{\frac{\sigma_0}{\sigma_1} } + 
+\frac{1}{2} \left( \sigma_1^2(x^2 -2\mu_0x + \mu_0^2) -\sigma_0^2(x^2 - 2\mu_1x + \mu_1^2) \right) > 0
+$$
+$$
+\log{\frac{\sigma_0}{\sigma_1} } + 
+\frac{1}{2} \left( \sigma_1^2 x^2-\sigma_0^2 x^2 -2\sigma_1^2 \mu_0x  + 2\sigma_0^2 \mu_1x - \sigma_0^2\mu_1^2 + \sigma_1^2\mu_0^2 \right) > 0
+$$
+$$
+\log{\frac{\sigma_0}{\sigma_1} } + 
+ \frac{1}{2}x^2(\sigma_1^2 -\sigma_0^2 ) + x( \sigma_0^2 \mu_1 - \sigma_1^2 \mu_0) -\frac{1}{2} (\sigma_0^2\mu_1^2 - \sigma_1^2\mu_0^2) > 0
+$$
+Further simplifying yields
+$$
+ x^2(\sigma_1^2 -\sigma_0^2 ) + 2x( \sigma_0^2 \mu_1 - \sigma_1^2 \mu_0)  >  (\sigma_0^2\mu_1^2 - \sigma_1^2\mu_0^2) - 2\log{\frac{\sigma_0}{\sigma_1} }
+$$
+This is a quadratic equation. Solving for $x$:
+$$
+ x^2(\sigma_1^2 -\sigma_0^2 ) + 2x( \sigma_0^2 \mu_1 - \sigma_1^2 \mu_0)  - (\sigma_0^2\mu_1^2 - \sigma_1^2\mu_0^2) + 2\log{\frac{\sigma_0}{\sigma_1} }>  0
+$$
+or
+$$
+x > \frac{-2( \sigma_0^2 \mu_1 - \sigma_1^2 \mu_0) 
++
+\sqrt{4( \sigma_0^2 \mu_1 - \sigma_1^2 \mu_0)^2 - 
+4
+(\sigma_1^2 -\sigma_0^2)
+(- (\sigma_0^2\mu_1^2 - \sigma_1^2\mu_0^2) + 2\log{\frac{\sigma_0}{\sigma_1})}}}{2(\sigma_1^2 -\sigma_0^2)}
+$$
+$$
+x > \frac{-( \sigma_0^2 \mu_1 - \sigma_1^2 \mu_0) 
++
+ \sqrt{( \sigma_0^2 \mu_1 - \sigma_1^2 \mu_0)^2 + 
+(\sigma_0^2 - \sigma_1^2)
+(\sigma_1^2\mu_0^2 - \sigma_0^2\mu_1^2  + 2\log{\frac{\sigma_0}{\sigma_1})}}}{(\sigma_1^2 -\sigma_0^2)}
+$$
+
+## Part c.
+
+Now generate $n = 2000$ data points from the mixture described in Part a., where $\mu_0 = 0, \mu_1 = 3$, and $\sigma_0^2 = \sigma_1^2 = 1$. Plot a histogram of the $X$'s. This histogram is meant to be a sanity check for you; it should help you verify that you've generated the data properly. 
+
+```{r}
+
+Y <- sample(c(0,1), size = 2000, replace = TRUE, prob = c(.5,.5))
+
+X <- vector(length = 2000)
+for (i in 1:2000) {
+  if(Y[i] == 0) {
+    X[i] <- rnorm(1,0,1)
+  } else {
+    X[i] <- rnorm(1,3,1)
+  }
+}
+
+hist(X)
+
+
+```
+
+Set aside a randomly-selected test set of $n/5$ points. We will refer to the rest of the data as the training data. Use the labels of the training data to calculate the group means. That is, calculate the mean value of all the $X_i$'s in the training data with label $Y_i = 0$. Call this sample mean $\hat \mu_0$. Do the same thing to find $\hat \mu_1$. To be explicit, let $C_j = \{ i : Y_i = j \}$, and define
+$$
+\hat \mu_j = \frac{1}{|C_j|} \sum_{i \in C_j} X_i
+$$
+Now classify the data in your test set. To do this, recall that your rule in Part a. depended on the true data means $\mu_0 = 0$ and $\mu_1 = 3$. Plug in the sample means $\hat \mu_j$ instead. You should be able to do the classification in a single line of code, but there is no penalty for using more lines. Evaluate the estimator's performance using the loss: 
+$$
+\frac{1}{n} \sum_{i = 1}^n 1\{ \hat Y_i \ne Y_i \}
+$$
+
+```{r}
+# make into dataframe
+D = as.data.frame(cbind(X,Y))
+
+# sample the dataframe
+positions <- sample(2000, size=400, replace=FALSE)
+test <- D[positions, ]
+training <- D[-positions, ]
+
+Y0 <- (training[ ,2] == 0)
+Y1 <- (training[ ,2] == 1)
+
+X0.mean <- mean(training[Y0, 1])
+X1.mean <- mean(training[Y1, 1])
+
+test[,3] <- as.integer(test[,1] > mean(c(X0.mean,X1.mean)))
+
+error = sum(as.integer(test[,3] != test[,2])) / length(test[,1])
+```
+
+
+## Part d.
+
+Now you train and evaluate classifiers for training sets of increasing size $n$, as specified below. For each $n$, you should
+\begin{enumerate}
+\item Generate a training set of size $n$.
+\item Generate a test set of size 10,000. Note that the test set itself will change on each round, but the size will always be the same: 10,000.
+\item Compute the sample means on the training data.
+\item Classify the test data as described in Part c.
+\item Compute the error rate.
+\end{enumerate}
+
+Plot the error rate as a function of $n$. Comment on your findings. What is happening to the error rate as $n$ grows?
+```{r}
+
+seq.n <- seq(from = 2000, to = 20000, by = 20)
+
+error_given_size <- function(n) {
+  
+  # independently generate training set
+  Y.train <- sample(c(0,1), size = n, replace = TRUE, prob = c(.5,.5))
+
+  X.train <- vector(length = n)
+  for (i in 1:n) {
+    if(Y.train[i] == 0) {
+      X.train[i] <- rnorm(1,0,1)
+    } else {
+      X.train[i] <- rnorm(1,3,1)
+    }
+  }
+  
+  # make into dataframe
+  D.train = as.data.frame(cbind(X.train,Y.train))
+  
+  # independently generate test set
+  Y.test <- sample(c(0,1), size = 10000, replace = TRUE, prob = c(.5,.5))
+
+  X.test <- vector(length = 10000)
+  for (i in 1:10000) {
+    if(Y.test[i] == 0) {
+      X.test[i] <- rnorm(1,0,1)
+    } else {
+      X.test[i] <- rnorm(1,3,1)
+    }
+  }
+  
+  # make into dataframe
+  D.test = as.data.frame(cbind(X.test,Y.test))
+  
+  # get means from the training set
+  Y0 <- (D.train[ ,2] == 0)
+  Y1 <- (D.train[ ,2] == 1)
+  
+  X0.mean <- mean(D.train[Y0, 1])
+  X1.mean <- mean(D.train[Y1, 1])
+  
+  D.test[ ,3] <- as.integer(D.test[ ,1] > mean(c(X0.mean,X1.mean)))
+  
+  error = sum(as.integer(D.test[,3] != D.test[,2])) / length(D.test[,1])
+  return(error)
+}
+
+errors <- data.frame()
+
+for(i in 1:length(seq.n)) {
+  errors[i,1] <- seq.n[i]
+  errors[i,2] <- error_given_size(seq.n[i])
+}
+plot(errors[,1], errors[,2], xlab="Size n", ylab="errors")
+
+```
+Nothing should happen as $n$ grows, since the normal distribution ensures some randomness, aka the irreducible error doesn't change, and neither does the reducible one.
